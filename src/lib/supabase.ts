@@ -152,9 +152,11 @@ export async function fetchUserSettings(): Promise<
 export async function syncUserSettingsToLocal(): Promise<string> {
   const settings = await fetchUserSettings();
   const geminiApiKey = settings?.gemini_api_key ?? "";
-  // DBの値で不足分のみ補完（既にlocalにある場合は尊重）
-  const current = getBYOConfig();
-  if (geminiApiKey && !current.geminiApiKey) setBYOConfig({ ...current, geminiApiKey });
+  // 「ログイン一発で整う」ため、DBの値を優先して localStorage に反映する
+  if (geminiApiKey) {
+    const current = getBYOConfig();
+    if (current.geminiApiKey !== geminiApiKey) setBYOConfig({ ...current, geminiApiKey });
+  }
   return geminiApiKey;
 }
 
