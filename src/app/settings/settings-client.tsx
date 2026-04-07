@@ -188,35 +188,39 @@ export default function SettingsClient({ schemaSql }: Props) {
   }
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-lg border bg-card p-4">
+    <div className="min-h-screen bg-slate-950 text-slate-50">
+      <div className="sticky top-0 z-20 border-b border-white/8 bg-slate-950/95 px-4 py-4">
+        <h1 className="text-xl font-semibold">設定</h1>
+      </div>
+      <div className="space-y-8 p-4 max-w-4xl">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h2 className="font-semibold">BYO キー設定</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="font-semibold text-slate-50">BYO キー設定</h2>
+            <p className="text-sm text-slate-400">
               Supabase URL / Anon Key と Gemini API Key を入力してください。
             </p>
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-slate-400">
             {isConfigured ? "設定済み" : "未設定"}
           </div>
         </div>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <label className="flex items-center gap-2 text-sm font-medium">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-50">
               <span>Supabase URL</span>
               <a
                 href="https://supabase.com/dashboard"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
               >
                 Supabase Dashboard <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </label>
             <input
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
               placeholder="https://xxxx.supabase.co"
               value={supabaseUrl}
               onChange={(e) => setSupabaseUrl(e.target.value)}
@@ -226,19 +230,19 @@ export default function SettingsClient({ schemaSql }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <label className="flex items-center gap-2 text-sm font-medium">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-50">
               <span>Supabase Anon Key</span>
               <a
                 href="https://supabase.com/dashboard"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
               >
                 取得先 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </label>
             <input
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
               placeholder="eyJhbGciOi..."
               value={supabaseAnonKey}
               onChange={(e) => setSupabaseAnonKey(e.target.value)}
@@ -248,19 +252,19 @@ export default function SettingsClient({ schemaSql }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <label className="flex items-center gap-2 text-sm font-medium">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-50">
               <span>Gemini API Key</span>
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
               >
                 Google AI Studio <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </label>
             <input
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
               placeholder="AIza..."
               value={geminiApiKey}
               onChange={(e) => setGeminiApiKey(e.target.value)}
@@ -274,14 +278,14 @@ export default function SettingsClient({ schemaSql }: Props) {
               type="button"
               onClick={onSave}
               disabled={!canSave}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
             >
               保存
             </button>
             <button
               type="button"
               onClick={onTestConnection}
-              className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 disabled:opacity-50 transition"
               disabled={testStatus.state === "running"}
             >
               {testStatus.state === "running" ? "接続テスト中..." : "接続テスト"}
@@ -289,44 +293,44 @@ export default function SettingsClient({ schemaSql }: Props) {
             <button
               type="button"
               onClick={onClear}
-              className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium text-destructive"
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-red-400 hover:bg-white/10 transition"
             >
               削除
             </button>
 
-            <div className="ml-auto text-sm text-muted-foreground">
+            <div className="ml-auto text-sm text-slate-400">
               {saveMsg ?? ""}
             </div>
           </div>
 
           {testStatus.state === "ok" ? (
-            <div className="text-sm text-emerald-600">接続OK（認証エンドポイント到達）</div>
+            <div className="text-sm text-emerald-400">接続OK（認証エンドポイント到達）</div>
           ) : testStatus.state === "ng" ? (
-            <div className="text-sm text-destructive">
+            <div className="text-sm text-red-400">
               接続NG: {testStatus.message}
             </div>
           ) : null}
         </div>
       </section>
 
-      <section className="rounded-lg border bg-card p-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h2 className="font-semibold">ユーザー設定（メール署名）</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="font-semibold text-slate-50">ユーザー設定（メール署名）</h2>
+            <p className="text-sm text-slate-400">
               お礼メール生成の差出人情報に使います。
             </p>
             {authMsg ? (
-              <p className="text-xs text-muted-foreground mt-1">{authMsg}</p>
+              <p className="text-xs text-slate-400 mt-1">{authMsg}</p>
             ) : null}
           </div>
         </div>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <label className="text-sm font-medium">表示名</label>
+            <label className="text-sm font-medium text-slate-50">表示名</label>
             <input
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
               value={profile.user_display_name}
               onChange={(e) =>
                 setProfile({ ...profile, user_display_name: e.target.value })
@@ -334,9 +338,9 @@ export default function SettingsClient({ schemaSql }: Props) {
             />
           </div>
           <div className="grid gap-1.5">
-            <label className="text-sm font-medium">所属（会社/屋号など）</label>
+            <label className="text-sm font-medium text-slate-50">所属（会社/屋号など）</label>
             <input
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
               value={profile.user_organization}
               onChange={(e) =>
                 setProfile({ ...profile, user_organization: e.target.value })
@@ -348,35 +352,35 @@ export default function SettingsClient({ schemaSql }: Props) {
             <button
               type="button"
               onClick={onSaveProfile}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
               disabled={profileStatus.state === "loading"}
             >
               {profileStatus.state === "loading" ? "保存中..." : "保存"}
             </button>
             {profileStatus.state === "ng" ? (
-              <div className="text-sm text-destructive">{profileStatus.message}</div>
+              <div className="text-sm text-red-400">{profileStatus.message}</div>
             ) : profileStatus.state === "ok" ? (
-              <div className="text-sm text-emerald-600">保存しました</div>
+              <div className="text-sm text-emerald-400">保存しました</div>
             ) : null}
           </div>
         </div>
       </section>
 
-      <section className="rounded-lg border bg-card p-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="mb-3">
-          <h2 className="font-semibold">カテゴリ別メール設定</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="font-semibold text-slate-50">カテゴリ別メール設定</h2>
+          <p className="text-sm text-slate-400">
             トーン指示とカテゴリ専用フッターを管理します。
           </p>
         </div>
 
         {catsStatus.state === "ng" ? (
-          <div className="mb-3 text-sm text-destructive">{catsStatus.message}</div>
+          <div className="mb-3 text-sm text-red-400">{catsStatus.message}</div>
         ) : null}
 
         <div className="space-y-4">
           {cats.map((c, idx) => (
-            <div key={c.id} className="rounded-md border bg-background p-3">
+            <div key={c.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -384,12 +388,12 @@ export default function SettingsClient({ schemaSql }: Props) {
                     style={{ backgroundColor: c.color_hex }}
                     aria-hidden="true"
                   />
-                  <div className="font-medium truncate">{c.name}</div>
+                  <div className="font-medium truncate text-slate-50">{c.name}</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => onSaveCategory(idx)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium"
+                  className="inline-flex h-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-3 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                   disabled={catsStatus.state === "loading"}
                 >
                   保存
@@ -398,9 +402,9 @@ export default function SettingsClient({ schemaSql }: Props) {
 
               <div className="grid gap-3 mt-3">
                 <div className="grid gap-1.5">
-                  <label className="text-sm font-medium">メールトーン（email_tone）</label>
+                  <label className="text-sm font-medium text-slate-50">メールトーン（email_tone）</label>
                   <input
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
                     placeholder='例: "フォーマル" / "フレンドリー"'
                     value={c.email_tone}
                     onChange={(e) => {
@@ -411,9 +415,9 @@ export default function SettingsClient({ schemaSql }: Props) {
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <label className="text-sm font-medium">カテゴリ専用フッター（category_footer）</label>
+                  <label className="text-sm font-medium text-slate-50">カテゴリ専用フッター（category_footer）</label>
                   <textarea
-                    className="min-h-20 w-full rounded-md border bg-background p-3 text-sm"
+                    className="min-h-20 w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white placeholder-slate-500 resize-none"
                     placeholder="例: 署名や一言を追記"
                     value={c.category_footer}
                     onChange={(e) => {
@@ -428,19 +432,19 @@ export default function SettingsClient({ schemaSql }: Props) {
           ))}
 
           {catsStatus.state === "loading" ? (
-            <div className="text-sm text-muted-foreground">読込/保存中...</div>
+            <div className="text-sm text-slate-400">読込/保存中...</div>
           ) : null}
         </div>
       </section>
 
-      <section className="rounded-lg border bg-card p-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
           <div>
-            <h2 className="font-semibold">SQLウィザード（テーブル作成）</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="font-semibold text-slate-50">SQLウィザード（テーブル作成）</h2>
+            <p className="text-sm text-slate-400">
               Supabase の SQL Editor で実行してテーブルを作成してください。
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               ※ テーブル定義が更新されたため、既存ユーザーはテーブルの再作成が必要です。
             </p>
           </div>
@@ -448,18 +452,19 @@ export default function SettingsClient({ schemaSql }: Props) {
             <button
               type="button"
               onClick={onCopySql}
-              className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
             >
               テーブル作成用SQLをコピー
             </button>
-            <div className="text-sm text-muted-foreground">{copyMsg ?? ""}</div>
+            <div className="text-sm text-slate-400">{copyMsg ?? ""}</div>
           </div>
         </div>
 
-        <pre className="max-h-[420px] overflow-auto rounded-md border bg-background p-3 text-xs leading-relaxed">
+        <pre className="max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-slate-300">
           {schemaSql}
         </pre>
       </section>
+      </div>
     </div>
   );
 }

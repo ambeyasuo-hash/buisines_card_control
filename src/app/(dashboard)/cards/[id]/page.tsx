@@ -72,20 +72,23 @@ function Field({
   label,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="grid gap-1.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <label className="text-xs font-semibold text-slate-300">{label}</label>
       <input
-        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+        className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500 disabled:opacity-50"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
         spellCheck={false}
+        disabled={disabled}
       />
     </div>
   );
@@ -167,7 +170,7 @@ export default function CardDetailPage() {
     return (
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <h1 className="text-2xl font-bold mb-2">詳細</h1>
-        <p className="text-sm text-muted-foreground mb-4">
+        <p className="text-sm text-slate-400 mb-4">
           先に接続設定を完了してください。
         </p>
         <Link
@@ -330,76 +333,75 @@ export default function CardDetailPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-3xl">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">詳細</h1>
-          <div className="text-sm text-muted-foreground">
-            {card?.created_at ? `作成: ${card.created_at}` : ""}
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      {/* Header */}
+      <div className="sticky top-0 z-20 border-b border-white/8 bg-slate-950/95 px-4 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Link href="/cards" className="h-9 w-9 rounded-full bg-white/5 border border-white/10 grid place-items-center hover:bg-white/10 transition">
+              <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <span className="font-bold text-white">詳細</span>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/cards"
-            className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
-          >
-            一覧へ
-          </Link>
           <button
             type="button"
             onClick={onSave}
             disabled={saving || loading || !canEdit}
-            className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            className="inline-flex h-10 items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
           >
             {saving ? "保存中..." : "保存"}
           </button>
         </div>
       </div>
 
-      {toast ? (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 rounded-full border bg-white px-4 py-2 text-sm shadow">
-          {toast}
-        </div>
-      ) : null}
+      {/* Content */}
+      <div className="flex-1 px-4 py-6 max-w-4xl mx-auto w-full space-y-6">
+        {toast && (
+          <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 rounded-full border border-white/20 bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+            {toast}
+          </div>
+        )}
 
-      {errorMsg ? (
-        <div className="mb-4 rounded-md border bg-card p-3 text-sm text-destructive">
-          {errorMsg}
-        </div>
-      ) : null}
+        {errorMsg && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
+            {errorMsg}
+          </div>
+        )}
 
-      {loading ? (
-        <div className="text-sm text-muted-foreground">読込中...</div>
-      ) : !edit ? (
-        <div className="text-sm text-muted-foreground">データが見つかりません。</div>
-      ) : (
+        {loading ? (
+          <div className="text-sm text-slate-400">読込中...</div>
+        ) : !edit ? (
+          <div className="text-sm text-slate-400">データが見つかりません。</div>
+        ) : (
         <div className="space-y-6">
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="font-semibold">AIメール作成</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="font-bold text-slate-50">📧 フォローアップメール</div>
+                <div className="text-sm text-slate-400">
                   ユーザー設定（表示名/所属）とカテゴリ設定（トーン/署名）を反映して生成します。
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onGenerateMail}
-                className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+                className="inline-flex h-10 items-center justify-center rounded-full border border-blue-500/50 bg-blue-500/10 px-4 text-sm font-medium text-blue-300 hover:bg-blue-500/20 transition disabled:opacity-50"
                 disabled={mailStatus.state === "running"}
               >
-                {mailStatus.state === "running" ? "生成中..." : "AIメール作成"}
+                {mailStatus.state === "running" ? "生成中..." : "メール生成"}
               </button>
             </div>
 
             {mailStatus.state === "ng" ? (
-              <div className="mt-3 rounded-md border bg-background p-3 text-sm text-destructive">
+              <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
                 {mailStatus.message}
                 <div className="mt-2">
                   <button
                     type="button"
                     onClick={onGenerateMail}
-                    className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium"
+                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                   >
                     再試行
                   </button>
@@ -410,17 +412,17 @@ export default function CardDetailPage() {
             {mailStatus.state === "ok" ? (
               <div className="mt-4 grid gap-3">
                 <div className="grid gap-1.5">
-                  <div className="text-xs text-muted-foreground">件名</div>
+                  <div className="text-xs font-semibold text-slate-300">件名</div>
                   <input
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
                     value={mailStatus.subject}
                     readOnly
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <div className="text-xs text-muted-foreground">本文（コピー用）</div>
+                  <div className="text-xs font-semibold text-slate-300">本文（コピー用）</div>
                   <textarea
-                    className="min-h-40 w-full rounded-md border bg-background p-3 text-sm"
+                    className="min-h-40 w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white placeholder-slate-500 resize-none"
                     value={mailStatus.body}
                     readOnly
                   />
@@ -428,7 +430,7 @@ export default function CardDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <a
                     href={mailStatus.mailto}
-                    className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+                    className="inline-flex h-11 items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 transition"
                   >
                     メーラーを起動
                   </a>
@@ -444,7 +446,7 @@ export default function CardDetailPage() {
                         window.setTimeout(() => setToast(null), 1200);
                       }
                     }}
-                    className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+                    className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                   >
                     本文をコピー
                   </button>
@@ -453,7 +455,8 @@ export default function CardDetailPage() {
             ) : null}
           </section>
 
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <h3 className="font-bold text-slate-50 mb-4">基本情報</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
                 label="氏名"
@@ -481,9 +484,9 @@ export default function CardDetailPage() {
                 onChange={(v) => setEdit({ ...edit, title: v })}
               />
               <div className="grid gap-1.5">
-                <div className="text-xs text-muted-foreground">登録元</div>
+                <label className="text-xs font-semibold text-slate-300">登録元</label>
                 <select
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white"
                   value={edit.source}
                   onChange={(e) =>
                     setEdit({ ...edit, source: e.target.value as any })
@@ -502,7 +505,8 @@ export default function CardDetailPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <h3 className="font-bold text-slate-50 mb-4">基本情報</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
                 label="メール"
@@ -525,9 +529,9 @@ export default function CardDetailPage() {
                 onChange={(v) => setEdit({ ...edit, url: v })}
               />
               <div className="sm:col-span-2 grid gap-1.5">
-                <div className="text-xs text-muted-foreground">住所</div>
+                <div className="text-xs font-semibold text-slate-300">住所</div>
                 <input
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
                   value={edit.address}
                   onChange={(e) => setEdit({ ...edit, address: e.target.value })}
                 />
@@ -535,18 +539,18 @@ export default function CardDetailPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
                 <div className="font-semibold">位置情報</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-slate-400">
                   座標を取得し、Geminiで地名に変換して `location_name` に保存します。
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onUpdateLocation}
-                className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                 disabled={saving}
               >
                 位置情報を更新
@@ -554,13 +558,13 @@ export default function CardDetailPage() {
             </div>
 
             {geoErr ? (
-              <div className="mb-3 rounded-md border bg-background p-3 text-sm text-destructive">
+              <div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
                 {geoErr}
                 <div className="mt-2">
                   <button
                     type="button"
                     onClick={onUpdateLocation}
-                    className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium"
+                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                     disabled={saving}
                   >
                     再試行
@@ -593,30 +597,31 @@ export default function CardDetailPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="font-semibold mb-2">メモ</div>
             <textarea
-              className="min-h-28 w-full rounded-md border bg-background p-3 text-sm"
+              className="min-h-28 w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white placeholder-slate-500 resize-none"
               value={edit.notes}
               onChange={(e) => setEdit({ ...edit, notes: e.target.value })}
             />
           </section>
 
-          <section className="rounded-lg border bg-card p-4">
-            <div className="text-sm text-muted-foreground mb-3">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-sm text-slate-400 mb-3">
               削除は取り消せません。誤操作防止のため、画面下部に配置しています。
             </div>
             <button
               type="button"
               onClick={onDelete}
               disabled={saving || loading || !card}
-              className="inline-flex h-12 w-full items-center justify-center rounded-md border bg-background text-sm font-medium text-destructive disabled:opacity-50"
+              className="inline-flex h-12 w-full items-center justify-center rounded-full border border-red-500/30 bg-red-500/5 text-sm font-medium text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
             >
               削除
             </button>
           </section>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -16,14 +16,5 @@ async function loadSchemaSql(): Promise<string> {
 export default async function SettingsPage() {
   const schemaSql = await loadSchemaSql();
 
-  return (
-    <div className="container mx-auto px-4 py-8 max-w-3xl">
-      <h1 className="text-2xl font-bold mb-2">接続設定</h1>
-      <p className="text-sm text-muted-foreground mb-6">
-        Supabase / Gemini のキーは BYO 方式で、このブラウザの localStorage に保存されます。
-      </p>
-
-      <SettingsClient schemaSql={schemaSql} />
-    </div>
-  );
+  return <SettingsClient schemaSql={schemaSql} />;
 }
