@@ -9,6 +9,7 @@ import { useSupabase } from "@/hooks/useSupabase";
 import type { BusinessCard } from "@/types";
 import { geoToLocationName, generateFollowUpEmail } from "@/lib/gemini";
 import { prefetchGeolocation } from "@/lib/geolocation";
+import { downloadVCard } from "@/lib/vcard";
 import type { Database } from "@/types/database";
 import { TimeoutError, withTimeout } from "@/lib/async";
 
@@ -43,6 +44,20 @@ function toMailtoUrl(input: { to?: string; subject: string; body: string }): str
   const body = encodeURIComponent(input.body.replace(/\n/g, "\r\n"));
   const to = input.to ? `mailto:${encodeURIComponent(input.to)}` : "mailto:";
   return `${to}?subject=${subject}&body=${body}`;
+}
+
+function cleanPhoneNumber(phone: string): string {
+  // Remove spaces, hyphens, parentheses for tel: link
+  return phone.replace(/[\s\-()]/g, "");
+}
+
+function isValidUrl(str: string): boolean {
+  try {
+    new URL(str.startsWith("http") ? str : `https://${str}`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function toEditState(card: any): EditState {
@@ -345,14 +360,26 @@ export default function CardDetailPage() {
             </Link>
             <span className="font-bold text-white">詳細</span>
           </div>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving || loading || !canEdit}
-            className="inline-flex h-10 items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
-          >
-            {saving ? "保存中..." : "保存"}
-          </button>
+          <div className="flex items-center gap-2">
+            {card && (
+              <button
+                type="button"
+                onClick={() => downloadVCard(card)}
+                className="inline-flex h-10 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
+                title="連絡先へ追加（vCard形式でダウンロード）"
+              >
+                連絡先へ追加
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || loading || !canEdit}
+              className="inline-flex h-10 items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
+            >
+              {saving ? "保存中..." : "保存"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -508,26 +535,70 @@ export default function CardDetailPage() {
           <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <h3 className="font-bold text-slate-50 mb-4">基本情報</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="メール"
-                value={edit.email}
-                onChange={(v) => setEdit({ ...edit, email: v })}
-              />
-              <Field
-                label="電話"
-                value={edit.phone}
-                onChange={(v) => setEdit({ ...edit, phone: v })}
-              />
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">メール</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 h-11 rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
+                    value={edit.email}
+                    onChange={(v) => setEdit({ ...edit, email: v.target.value })}
+                  />
+                  {edit.email && (
+                    <a
+                      href={toMailtoUrl({ to: edit.email, subject: "", body: "" })}
+                      className="h-11 w-11 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 hover:bg-blue-500/20 transition flex-shrink-0"
+                      title="メールを送信"
+                    >
+                      ✉️
+                    </a>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">電話</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 h-11 rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
+                    value={edit.phone}
+                    onChange={(v) => setEdit({ ...edit, phone: v.target.value })}
+                  />
+                  {edit.phone && (
+                    <a
+                      href={`tel:${cleanPhoneNumber(edit.phone)}`}
+                      className="h-11 w-11 rounded-full border border-green-500/30 bg-green-500/10 flex items-center justify-center text-green-300 hover:bg-green-500/20 transition flex-shrink-0"
+                      title="電話を発信"
+                    >
+                      📞
+                    </a>
+                  )}
+                </div>
+              </div>
               <Field
                 label="郵便番号"
                 value={edit.postal_code}
                 onChange={(v) => setEdit({ ...edit, postal_code: v })}
               />
-              <Field
-                label="URL"
-                value={edit.url}
-                onChange={(v) => setEdit({ ...edit, url: v })}
-              />
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">URL</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 h-11 rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
+                    value={edit.url}
+                    onChange={(v) => setEdit({ ...edit, url: v.target.value })}
+                  />
+                  {edit.url && isValidUrl(edit.url) && (
+                    <a
+                      href={edit.url.startsWith("http") ? edit.url : `https://${edit.url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="h-11 w-11 rounded-full border border-violet-500/30 bg-violet-500/10 flex items-center justify-center text-violet-300 hover:bg-violet-500/20 transition flex-shrink-0"
+                      title="ウェブサイトを開く"
+                    >
+                      🔗
+                    </a>
+                  )}
+                </div>
+              </div>
               <div className="sm:col-span-2 grid gap-1.5">
                 <div className="text-xs font-semibold text-slate-300">住所</div>
                 <input

@@ -82,12 +82,13 @@ export default function NewCardPage() {
     async function loadCategories() {
       if (!client) return;
       try {
-        const { data, error } = await client.from("categories").select("*");
+        const { data, error } = (await client.from("categories").select("*")) as any;
         if (error) throw error;
-        setCategories(data || []);
+        const cats = (data || []) as Category[];
+        setCategories(cats);
         // 最初のカテゴリを デフォルト選択
-        if (data && data.length > 0) {
-          setForm((prev) => ({ ...prev, category_id: data[0].id }));
+        if (cats && cats.length > 0) {
+          setForm((prev) => ({ ...prev, category_id: cats[0].id }));
         }
       } catch (e) {
         console.error("Failed to load categories:", e);

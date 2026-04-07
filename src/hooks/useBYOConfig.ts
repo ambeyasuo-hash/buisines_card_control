@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BYOConfig } from "@/types";
 import { getBYOConfig, setBYOConfig, clearBYOConfig } from "@/lib/utils";
-import { getSession, fetchUserSettings, signOut as supabaseSignOut } from "@/lib/supabase";
+import { getSession, fetchUserSettings, signOut as supabaseSignOut, performHealthCheck } from "@/lib/supabase";
 
 const EMPTY: BYOConfig = { supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" };
 
@@ -34,6 +34,11 @@ export function useBYOConfig() {
             setBYOConfig(synced);
             setConfig(synced);
           }
+
+          // Health Check: Supabase 無料プランのスリープ防止（非同期、ノーウェイト）
+          performHealthCheck().catch(() => {
+            // サイレント: エラーは無視
+          });
         }
       }
 

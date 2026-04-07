@@ -5,9 +5,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSupabase } from "@/hooks/useSupabase";
+import { downloadCSV } from "@/lib/csv";
 import type { BusinessCard, Category } from "@/types";
 
 type SortKey = "exchanged_desc" | "exchanged_asc" | "name_asc" | "name_desc";
+
+function cleanPhoneNumber(phone: string): string {
+  return phone.replace(/[\s\-()]/g, "");
+}
+
+function toMailtoUrl(to?: string): string {
+  return to ? `mailto:${encodeURIComponent(to)}` : "mailto:";
+}
 
 function formatDate(dateLike?: string) {
   if (!dateLike) return "";
@@ -167,12 +176,26 @@ export default function CardsPage() {
             </Link>
             <span className="font-bold text-white">名刺一覧</span>
           </div>
-          <Link href="/cards/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700 transition">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            追加
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCSV(filteredSorted)}
+              disabled={loading || filteredSorted.length === 0}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 text-xs font-bold text-slate-50 hover:bg-white/10 disabled:opacity-50 transition"
+              title="CSV形式で全データをダウンロード"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0-4v4m0 0H8m4 0h4M4 20h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              CSV
+            </button>
+            <Link href="/cards/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700 transition">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              追加
+            </Link>
+          </div>
         </div>
 
         {/* 検索バー */}
@@ -228,46 +251,71 @@ export default function CardsPage() {
           const company = c.company?.trim() || "";
 
           return (
-            <Link
-              key={c.id}
-              href={`/cards/${c.id}`}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition"
-            >
-              {/* アバター */}
-              <div className="h-10 w-10 rounded-xl border border-white/10 grid place-items-center shrink-0 overflow-hidden">
-                {c.thumbnail_base64 ? (
-                  <img src={c.thumbnail_base64} alt="" className="h-full w-full object-cover" loading="lazy" />
-                ) : (
-                  <div className="w-full h-full grid place-items-center text-sm font-bold" style={{ backgroundColor: `${dotColor}20`, color: dotColor }}>
-                    {c.full_name.charAt(0)}
+            <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition group">
+              <Link
+                href={`/cards/${c.id}`}
+                className="flex items-center gap-3 flex-1 min-w-0"
+              >
+                {/* アバター */}
+                <div className="h-10 w-10 rounded-xl border border-white/10 grid place-items-center shrink-0 overflow-hidden">
+                  {c.thumbnail_base64 ? (
+                    <img src={c.thumbnail_base64} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="w-full h-full grid place-items-center text-sm font-bold" style={{ backgroundColor: `${dotColor}20`, color: dotColor }}>
+                      {c.full_name.charAt(0)}
+                    </div>
+                  )}
+                </div>
+
+                {/* 左側：名前とかな */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-slate-500 leading-3.5">{c.kana ?? ""}</div>
+                  <div className="text-sm font-semibold text-white">{c.full_name}</div>
+                </div>
+
+                {/* 中央：会社と地名 */}
+                <div className="w-[38%] min-w-0">
+                  <div className="text-sm text-slate-300 truncate">{company}</div>
+                  <div className="text-[10px] text-slate-500">{c.location_name ?? ""}</div>
+                </div>
+
+                {/* 右側：日付とステータス */}
+                <div className="text-right shrink-0 w-20">
+                  <div className="text-[11px] text-slate-500">{exchanged}</div>
+                  <div className="flex justify-end mt-1">
+                    <div
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: dotColor }}
+                      title={cat?.name ?? "カテゴリ未設定"}
+                    />
                   </div>
+                </div>
+              </Link>
+
+              {/* 連絡先アクションボタン（クリック時にリンク移動しない） */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                {c.email && (
+                  <a
+                    href={toMailtoUrl(c.email)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-8 w-8 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 hover:bg-blue-500/20 transition text-sm"
+                    title="メールを送信"
+                  >
+                    ✉️
+                  </a>
+                )}
+                {c.phone && (
+                  <a
+                    href={`tel:${cleanPhoneNumber(c.phone)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-8 w-8 rounded-full border border-green-500/30 bg-green-500/10 flex items-center justify-center text-green-300 hover:bg-green-500/20 transition text-sm"
+                    title="電話を発信"
+                  >
+                    📞
+                  </a>
                 )}
               </div>
-
-              {/* 左側：名前とかな */}
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-slate-500 leading-3.5">{c.kana ?? ""}</div>
-                <div className="text-sm font-semibold text-white">{c.full_name}</div>
-              </div>
-
-              {/* 中央：会社と地名 */}
-              <div className="w-[38%] min-w-0">
-                <div className="text-sm text-slate-300 truncate">{company}</div>
-                <div className="text-[10px] text-slate-500">{c.location_name ?? ""}</div>
-              </div>
-
-              {/* 右側：日付とステータス */}
-              <div className="text-right shrink-0 w-20">
-                <div className="text-[11px] text-slate-500">{exchanged}</div>
-                <div className="flex justify-end mt-1">
-                  <div
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: dotColor }}
-                    title={cat?.name ?? "カテゴリ未設定"}
-                  />
-                </div>
-              </div>
-            </Link>
+            </div>
           );
         })}
 

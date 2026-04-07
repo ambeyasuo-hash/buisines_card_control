@@ -192,3 +192,25 @@ export async function upsertUserSettings(input: {
 export async function upsertUserSettingsGeminiKey(geminiApiKey: string): Promise<void> {
   return await upsertUserSettings({ geminiApiKey });
 }
+
+// ---------------------------------------------------------------------------
+// Health Check (Cold Start Prevention)
+// ---------------------------------------------------------------------------
+
+/**
+ * Supabase 無料プランのスリープを防ぐため、定期的なヘルスチェックを実行する。
+ * 単純な SELECT 1 クエリを実行し、DB接続を保つ。
+ * エラーはサイレント（ロギングのみ、UIへの通知なし）。
+ */
+export async function performHealthCheck(): Promise<void> {
+  const client = getDynamicSupabase();
+  if (!client) return; // 未設定の場合はスキップ
+
+  try {
+    // 軽量クエリで接続確認
+    await client.from("business_cards").select("id").limit(1);
+  } catch (err) {
+    // サイレント: エラーはコンソールのみ
+    console.debug("[Health Check]", err instanceof Error ? err.message : String(err));
+  }
+}
