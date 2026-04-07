@@ -1,0 +1,14 @@
+<!-- // (c) 2026 ambe / Business_Card_Folder -->
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
+  <rect width="180" height="180" rx="36" fill="#020617"/>
+  <g fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <!-- folder outline (Business_Card_Folder motif) -->
+    <path d="M44 64c0-6 4-10 10-10h26l10 10h36c6 0 10 4 10 10v54c0 6-4 10-10 10H54c-6 0-10-4-10-10V64z"/>
+
+    <!-- business card inside folder -->
+    <rect x="56" y="88" width="86" height="40" rx="10"/>
+    <circle cx="74" cy="108" r="6"/>
+    <path d="M88 104h40"/>
+    <path d="M88 116h28"/>
+  </g>
+</svg>
