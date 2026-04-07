@@ -136,3 +136,30 @@ export async function analyzeBusinessCard(imageFile: File): Promise<CardOCRResul
 
   return { ...ocr, thumbnail_base64: thumb ?? undefined };
 }
+
+const GEO_SYSTEM_INSTRUCTION = `
+あなたは座標→地名の変換器です。入力の緯度経度から、人間が理解できる短い地名を1行で返してください。
+出力は地名テキストのみ。説明、補足、引用、改行、JSON、Markdownは禁止。
+`.trim();
+
+export async function geoToLocationName(lat: number, lng: number): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const { geminiApiKey } = getBYOConfig();
+  if (!geminiApiKey) return null;
+
+  try {
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
+    const model = genAI.getGenerativeModel({
+      model: MODEL,
+      systemInstruction: GEO_SYSTEM_INSTRUCTION,
+    });
+
+    const prompt = `lat=${lat}, lng=${lng}\n例: Niigata, Japan の形式で短く。`;
+    const res = await model.generateContent(prompt);
+    const text = res.response.text().trim();
+    if (!text) return null;
+    return text.split("\n")[0].trim();
+  } catch {
+    return null;
+  }
+}

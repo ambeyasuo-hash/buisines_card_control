@@ -28,6 +28,9 @@ export type BusinessCard = {
   thumbnail_base64?: string;
   notes?: string;
   location_name?: string;
+  location_lat?: number;
+  location_lng?: number;
+  location_accuracy_m?: number;
   source: 'camera' | 'line' | 'manual';
   exchanged_at: string;
   created_at: string;

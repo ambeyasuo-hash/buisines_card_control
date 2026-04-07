@@ -208,9 +208,10 @@ export default function CardsPage() {
             const company = c.company?.trim() || "（会社名なし）";
 
             return (
-              <div
+              <Link
                 key={c.id}
-                className="h-16 px-4 sm:px-0 flex items-center gap-3"
+                href={`/cards/${c.id}`}
+                className="h-16 px-4 sm:px-0 flex items-center gap-3 hover:bg-black/[0.02]"
               >
                 <div className="w-10 flex items-center justify-center shrink-0">
                   {c.thumbnail_base64 ? (
@@ -254,7 +255,7 @@ export default function CardsPage() {
                     <span className="sr-only">登録元</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
 

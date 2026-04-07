@@ -1,65 +1,47 @@
-## design_doc.md v1.5
-（c）2026 ambe / Business_Card_Folder
-
-最終更新: 2026-04-07
+// (c) 2026 ambe / Business_Card_Folder
+# design_doc.md v2.1
 
 ## 1. 製品概要
 - **製品名**: 「あんべの名刺代わり」(Business_Card_Folder)
-- **コンセプト**: 現場での出会いを最速でお礼メールと資産に変える、AI駆動のBYO型名刺管理ツール。
+- **コンセプト**: 現場での出会いを最速でお礼メールと資産に変える、AI駆動の BYO 型名刺管理ツール。
+- **ターゲット**: サービス業界のコンサルタント。モバイルでの「俯瞰性」と「片手操作」を最優先。
 
-## 2. 絶対遵守の3原則 (Architecture Principles)
-- **Zero-Risk & Free Tier**: Gemini 2.5 Flash 無料枠を固定使用。Rate Limiterで物理遮断。
-- **Privacy-First (Zero-Footprint)**: 画像はOCR解析後、即メモリから破棄。DBには保存しない。
-- **特例**: 視認性向上のため、100px程度の超低解像度base64サムネイルのみをDBに保存する。
-- **BYO (Bring Your Own)**: Supabase URL/Key、Gemini API Keyは localStorage で管理。サーバーサイド環境変数に依存しない。
+## 2. 設計原則 (Architecture Principles)
 
-## 3. 完全要件定義 (Feature List)
-### A. 登録・解析 (OCR & Input)
-- **AI解析**: Gemini 2.5 Flash による全項目抽出（氏名・カナ・会社・役職・住所・連絡先等）。
-- **即時編集プレビュー**: OCR後、保存前にユーザーが内容を修正し、面談メモ（notes）を追記するフロー。
-- **サムネイル生成**: 画像アップロード時にフロントエンドでリサイズ・圧縮を行い、`thumbnail_base64` を生成。
-- **Geo-tagging**: 登録時のGPS座標から「交換場所（location_name）」を自動記録。
-- **お礼メール生成**: 登録データとメモに基づき、Geminiが最適なメール文面をドラフト。mailto: 連携。
+### BYO + Auth一元化
+- **Hybrid Storage**: Supabase URL/Anon Key は `localStorage` で保持（ブートストラップ用）。
+- **Centralized Config**: Gemini API Key は Supabase Auth ログイン後、`user_settings` テーブルから取得し同期。
+- **Privacy-First**: フルサイズ画像は OCR 解析後、即メモリから破棄。100px 幅の超軽量 base64 サムネイルのみ DB 保持。
 
-### B. 閲覧・管理 (UI/UX)
-- **スリムリスト**: 1行1件（h-16）。氏名（カナ併記）、会社名、交換日、登録元を凝縮し、1画面10〜20件の俯瞰性を確保。
-- **インライン編集**: 詳細画面で遷移せず、鉛筆アイコンでその場編集・削除。
-- **検索・フィルタ**: 氏名（かな対応）・会社名・メモの全文検索。カテゴリカラーによる絞り込み。
-- **カテゴリ管理**: 標準セット（重要・パートナー等）＋ユーザーによる自由な追加・色指定。
+## 3. 認証・同期フロー
+1. **初期設定**: `/settings` で Supabase 接続情報を入力（localStorage 保存）。
+2. **認証**: `/login` で自分専用アカウントを作成/ログイン。
+3. **同期**: ログイン成功時、DB の `user_settings` から Gemini API Key を取得し展開。
+4. **利用**: 以降、ログインセッションがある限り、どの端末からでも同じ設定・データにアクセス可能。
 
-### C. 導入・保守 (Onboarding & Data)
-- **SQLウィザード**: `/settings` に、自身のSupabaseで実行すべきテーブル作成SQL（DDL）を表示。
-- **データ出力**: 全データの CSV エクスポート機能。
-- **接続ガード**: 設定未完了時は全てのページから `/settings` へ強制リダイレクト。
+## 4. データ設計 (Database Schema)
 
-## 4. データベース・スキーマ
-- **users**: ユーザー管理
-- **categories**: カテゴリ名、カラーコード（color_hex）
-- **business_cards**: 名刺データ（kana, location_name, notes, exchanged_at, source 等を含む全カラム）
-- **email_logs**: お礼メールの送信・生成履歴
-- `business_cards` テーブルに `thumbnail_base64` (TEXT型) を追加。
+### `user_settings`
+- `user_id`: uuid (FK to auth.users, UNIQUE)
+- `gemini_api_key`: text (暗号化推奨だが、まずは RLS で保護)
 
-## 5. 法的事項・表示 (Legal & Info)
-- **Footer**: 全ページ下部に © 2026 ambe を表示。
-- **Disclaimer (免責事項)**: BYOモデルに伴う「自己責任原則」および「API課金・データ管理の利用者帰属」を明記。
-- **About ページ**: `/about` に免責事項の詳細と、画像非保持のプライバシーポリシーを掲載。
+### `business_cards`
+- `user_id`: uuid (RLS 用)
+- `name`, `name_kana`, `company_name`, `position`, `email`, `tel`, `address`: text
+- `notes`: text (面談メモ)
+- `location_name`: text (位置情報から変換された地名)
+- `thumbnail_base64`: text (100px幅 jpeg/webp)
+- `created_at`: timestamptz (INDEX 推奨)
 
-## 6. ディレクトリ構造
-```plaintext
-src/
-├── app/
-│   ├── (dashboard)/cards/page.tsx  # 一覧・検索
-│   ├── settings/page.tsx           # BYO設定・SQLガイド・カテゴリ管理
-│   ├── about/page.tsx              # 免責事項・コピーライト
-│   └── layout.tsx                  # ヘッダー・フッター（©表示）
-├── components/
-│   ├── cards/                      # スリムリスト・OCR・編集・メール生成
-│   └── shared/                     # UIパーツ・検索窓
-├── hooks/
-│   ├── useBYOConfig.ts             # localStorage管理
-│   └── useSupabase.ts              # 動的クライアント生成
-├── lib/
-│   ├── supabase.ts                 # BYOファクトリ
-│   └── gemini.ts                   # OCR/メール生成プロンプト
-└── types/                          # DB/アプリケーション型定義
-```
+## 5. セキュリティ
+- **RLS**: 全テーブルに `auth.uid() = user_id` を適用し、他人のデータ閲覧を物理遮断。
+- **Prompt Security**: System Instruction による役割固定と JSON Schema 強制。
+- **Sanitization**: 出力時の HTML エスケープ徹底。
+
+## 6. ディレクトリ構造 (App Router)
+- `src/app/page.tsx`: ダッシュボード（タイル型メニュー）
+- `src/app/login/page.tsx`: 認証画面
+- `src/app/settings/page.tsx`: BYO/SQL設定
+- `src/app/(dashboard)/cards/page.tsx`: スリムリスト一覧
+- `src/app/(dashboard)/cards/new/page.tsx`: OCRスキャン画面
+- `src/hooks/useBYOConfig.ts`: 設定管理・DB同期ロジック
