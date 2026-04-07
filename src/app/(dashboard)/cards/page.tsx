@@ -140,135 +140,149 @@ export default function CardsPage() {
 
   if (!isConfigured) {
     return (
-      <div className="container mx-auto px-4 py-8 max-w-2xl">
-        <h1 className="text-2xl font-bold mb-2">名刺一覧</h1>
-        <p className="text-sm text-muted-foreground mb-4">
-          先に接続設定（Supabase URL / Anon Key / Gemini Key）を完了してください。
-        </p>
-        <Link
-          href="/settings"
-          className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          設定へ
-        </Link>
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+        <div className="flex-1 flex items-center justify-center px-5 py-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-2xl font-bold mb-2">名刺一覧</h1>
+            <p className="text-sm text-slate-400 mb-4">先に接続設定（Supabase URL / Anon Key / Gemini Key）を完了してください。</p>
+            <Link href="/settings" className="inline-flex h-11 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-medium text-white hover:bg-blue-700 transition">
+              設定へ
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-0 sm:px-4 py-0 sm:py-8">
-      <div className="px-4 sm:px-0 pt-6 sm:pt-0">
-        <h1 className="text-2xl font-bold mb-3">名刺一覧</h1>
-      </div>
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      {/* Sticky Header */}
+      <div className="border-b border-white/8 bg-slate-950/95">
+        <div className="flex items-center justify-between px-4 h-14">
+          <div className="flex items-center gap-2">
+            <Link href="/cards" className="h-9 w-9 rounded-full bg-white/5 border border-white/10 grid place-items-center hover:bg-white/10 transition">
+              <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <span className="font-bold text-white">名刺一覧</span>
+          </div>
+          <Link href="/cards/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700 transition">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            追加
+          </Link>
+        </div>
 
-      <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-        <div className="container mx-auto px-4 sm:px-0 py-3 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between max-w-none">
-          <div className="flex-1">
+        {/* 検索バー */}
+        <div className="px-4 pb-3">
+          <div className="relative">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="氏名 / かな / 会社名で検索"
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              placeholder="名前、会社名、役職で検索..."
+              className="h-10 w-full rounded-full border border-white/10 bg-white/5 pl-10 pr-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 transition"
               autoComplete="off"
               spellCheck={false}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <select
-              className="h-10 rounded-md border bg-background px-3 text-sm"
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-            >
-              <option value="exchanged_desc">交換日: 新しい順</option>
-              <option value="exchanged_asc">交換日: 古い順</option>
-              <option value="name_asc">氏名: 昇順</option>
-              <option value="name_desc">氏名: 降順</option>
-            </select>
-            <div className="text-xs text-muted-foreground w-[5.5rem] text-right">
-              {loading ? "読込中..." : `${filteredSorted.length}件`}
-            </div>
-          </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-0 sm:px-4 max-w-none">
+      {/* 件数 + ソート */}
+      <div className="flex items-center justify-between px-4 py-2 text-xs text-slate-500">
+        <span>{loading ? "読込中..." : `${filteredSorted.length} 件`}</span>
+        <div className="flex items-center gap-1 text-slate-400">
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+          </svg>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className="bg-transparent text-slate-400 text-xs cursor-pointer focus:outline-none"
+          >
+            <option value="exchanged_desc">交換日: 新しい順</option>
+            <option value="exchanged_asc">交換日: 古い順</option>
+            <option value="name_asc">氏名: 昇順</option>
+            <option value="name_desc">氏名: 降順</option>
+          </select>
+        </div>
+      </div>
+
+      {/* リスト */}
+      <div className="flex-1 overflow-y-auto divide-y divide-white/[0.05] pb-4">
         {errorMsg ? (
-          <div className="px-4 sm:px-0 py-6">
-            <div className="rounded-md border bg-card p-4 text-sm text-destructive">
-              読み込みエラー: {errorMsg}
-            </div>
+          <div className="px-4 py-6">
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">読み込みエラー: {errorMsg}</div>
           </div>
         ) : null}
 
-        <div className="divide-y">
-          {filteredSorted.map((c) => {
-            const cat = c.category_id ? categoryById.get(c.category_id) : undefined;
-            const dotColor = cat?.color_hex ?? "#94a3b8";
-            const exchanged = formatDate(c.exchanged_at);
-            const company = c.company?.trim() || "（会社名なし）";
+        {filteredSorted.map((c) => {
+          const cat = c.category_id ? categoryById.get(c.category_id) : undefined;
+          const dotColor = cat?.color_hex ?? "#64748b";
+          const exchanged = formatDate(c.exchanged_at);
+          const company = c.company?.trim() || "";
 
-            return (
-              <Link
-                key={c.id}
-                href={`/cards/${c.id}`}
-                className="h-16 px-4 sm:px-0 flex items-center gap-3 hover:bg-black/[0.02]"
-              >
-                <div className="w-10 flex items-center justify-center shrink-0">
-                  {c.thumbnail_base64 ? (
-                    <img
-                      src={c.thumbnail_base64}
-                      alt=""
-                      className="h-9 w-9 rounded-sm object-cover border"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: dotColor }}
-                      aria-label={cat?.name ?? "カテゴリ未設定"}
-                      title={cat?.name ?? "カテゴリ未設定"}
-                    />
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="min-w-0">
-                    <div className="text-[11px] leading-4 text-muted-foreground truncate">
-                      {c.kana ?? ""}
-                    </div>
-                    <div className="font-medium leading-5 truncate">
-                      {c.full_name}
-                    </div>
+          return (
+            <Link
+              key={c.id}
+              href={`/cards/${c.id}`}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition"
+            >
+              {/* アバター */}
+              <div className="h-10 w-10 rounded-xl border border-white/10 grid place-items-center shrink-0 overflow-hidden">
+                {c.thumbnail_base64 ? (
+                  <img src={c.thumbnail_base64} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  <div className="w-full h-full grid place-items-center text-sm font-bold" style={{ backgroundColor: `${dotColor}20`, color: dotColor }}>
+                    {c.full_name.charAt(0)}
                   </div>
-                </div>
+                )}
+              </div>
 
-                <div className="min-w-0 w-[44%] sm:w-[40%]">
-                  <div className="text-sm leading-5 truncate">{company}</div>
-                  <div className="text-[11px] leading-4 text-muted-foreground truncate">
-                    {c.location_name ?? ""}
-                  </div>
-                </div>
+              {/* 左側：名前とかな */}
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-slate-500 leading-3.5">{c.kana ?? ""}</div>
+                <div className="text-sm font-semibold text-white">{c.full_name}</div>
+              </div>
 
-                <div className="w-[6.5rem] sm:w-28 text-right">
-                  <div className="text-xs text-muted-foreground leading-4">
-                    {exchanged}
-                  </div>
-                  <div className="mt-1 inline-flex items-center justify-end gap-1 text-xs text-muted-foreground">
-                    <SourceIcon source={c.source} />
-                    <span className="sr-only">登録元</span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+              {/* 中央：会社と地名 */}
+              <div className="w-[38%] min-w-0">
+                <div className="text-sm text-slate-300 truncate">{company}</div>
+                <div className="text-[10px] text-slate-500">{c.location_name ?? ""}</div>
+              </div>
 
-          {!loading && filteredSorted.length === 0 ? (
-            <div className="px-4 sm:px-0 py-10 text-sm text-muted-foreground">
-              名刺がありません（または検索条件に一致しません）。
-            </div>
-          ) : null}
-        </div>
+              {/* 右側：日付とステータス */}
+              <div className="text-right shrink-0 w-20">
+                <div className="text-[11px] text-slate-500">{exchanged}</div>
+                <div className="flex justify-end mt-1">
+                  <div
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: dotColor }}
+                    title={cat?.name ?? "カテゴリ未設定"}
+                  />
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+
+        {!loading && filteredSorted.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">名刺がありません（または検索条件に一致しません）。</div>
+        ) : null}
       </div>
+
+      {/* FAB */}
+      <Link href="/cards/new" className="absolute bottom-6 right-4 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 grid place-items-center transition shadow-lg shadow-blue-600/35">
+        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </Link>
     </div>
   );
 }

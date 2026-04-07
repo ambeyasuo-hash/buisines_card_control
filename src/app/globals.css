@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #020617;
+  --foreground: #f1f5f9;
+  --border: #1e293b;
+  --muted: #64748b;
 }
 
 @theme inline {
@@ -12,15 +14,43 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* スキャンアニメーション */
+@keyframes scan-beam {
+  0% { transform: translateY(-60px); }
+  100% { transform: translateY(360px); }
+}
+
+@keyframes bracket-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.animate-scan-beam {
+  animation: scan-beam 2s linear infinite;
+}
+
+.animate-bracket-pulse {
+  animation: bracket-pulse 2s ease-in-out infinite;
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* Tailwindの対話的要素のフォーカス状態 */
+@layer components {
+  .focus-ring {
+    @apply outline-none ring-2 ring-blue-500/50;
+  }
 }
