@@ -74,3 +74,31 @@
 - `src/app/(dashboard)/cards/page.tsx`: スリムリスト（高密度表示）
 - `src/app/(dashboard)/cards/new/page.tsx`: OCR スキャン（アニメーション層あり）
 - `src/app/(dashboard)/cards/[id]/page.tsx`: 詳細・編集・AIメール作成
+
+## 8. Phase 5: 実戦・効率化機能 (v2.4)
+
+### 8.1 クイック・アクション
+- **一覧画面での直接操作**: 各行の電話番号・メールアドレスをタップで `tel:` / `mailto:` リンク起動。
+- **詳細画面での拡張**: 電話、メール、Webサイト等への直接アクセスボタン。
+- **UX**: スマートフォンネイティブな操作感を実現。
+
+### 8.2 エクスポート機能
+- **vCard（.vcf）形式**:
+  - 個別名刺の vCard ダウンロード（詳細画面）。
+  - スマートフォンの標準連絡先アプリへ直接インポート可能。
+  - 名前、会社、電話、メール、住所、URL、メモ等を含める。
+
+- **CSV 形式**:
+  - 全名刺データの一括 CSV エクスポート。
+  - PC 上で Excel / Google Sheets での管理・加工用。
+  - 年賀状リスト作成等の用途。
+
+### 8.3 サステナビリティ設定（Cold Start 対策）
+- **Health Check 実装**:
+  - Supabase 無料枠の非アクティブ停止を防ぐため、定期的な Ping ロジック。
+  - GitHub Actions または Cloud Scheduler での自動実行。
+  - 最小限の API 呼び出し（`SELECT 1`）でサーバー活性を保持。
+
+- **ユーザー視点**:
+  - 連携情報は settings 画面で可視化（次回チェック時刻等）。
+  - 手動 Health Check ボタンも提供。
