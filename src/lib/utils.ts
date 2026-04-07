@@ -24,12 +24,19 @@ export function getBYOConfig(): BYOConfig {
 
     // 互換性: 旧キーが残っている場合は読み取り、最新キーへ移行する
     const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (!legacyRaw) return { supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" };
+    if (!legacyRaw) {
+      // localStorage が空の場合は環境変数（Vercel等）をデフォルト値として優先利用する
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+      return { supabaseUrl, supabaseAnonKey, geminiApiKey: "" };
+    }
     const parsed = JSON.parse(legacyRaw) as BYOConfig;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
     return parsed;
   } catch {
-    return { supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" };
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    return { supabaseUrl, supabaseAnonKey, geminiApiKey: "" };
   }
 }
 

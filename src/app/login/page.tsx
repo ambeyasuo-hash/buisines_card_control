@@ -2,10 +2,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmail, signUpWithEmail, syncUserSettingsToLocal } from "@/lib/supabase";
-import { getBYOConfig } from "@/lib/utils";
+import { getBYOConfig, setBYOConfig } from "@/lib/utils";
 
 type Mode = "signin" | "signup";
 
@@ -21,8 +21,32 @@ export default function LoginPage() {
     | { state: "needs_confirmation" }
   >({ state: "idle" });
 
-  const config = getBYOConfig();
+  const [config, setConfig] = useState(() => getBYOConfig());
   const canSubmit = Boolean(email && password && config.supabaseUrl && config.supabaseAnonKey);
+
+  useEffect(() => {
+    // URLクエリでSupabase設定をインポート: ?supa_url=...&supa_key=...
+    const params = new URLSearchParams(window.location.search);
+    const supaUrl = params.get("supa_url");
+    const supaKey = params.get("supa_key");
+    if (!supaUrl && !supaKey) return;
+
+    const current = getBYOConfig();
+    const next = {
+      ...current,
+      ...(supaUrl ? { supabaseUrl: supaUrl } : {}),
+      ...(supaKey ? { supabaseAnonKey: supaKey } : {}),
+    };
+    setBYOConfig(next);
+    setConfig(next);
+
+    // 誤って共有URLを再利用しないよう、パラメータはURLから取り除く
+    params.delete("supa_url");
+    params.delete("supa_key");
+    const rest = params.toString();
+    router.replace(rest ? `/login?${rest}` : "/login");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

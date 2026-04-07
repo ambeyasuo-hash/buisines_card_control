@@ -4,8 +4,6 @@ import { createClient, SupabaseClient, Session } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { getBYOConfig, setBYOConfig } from "@/lib/utils";
 
-const STORAGE_KEY = "BYO_CONFIG";
-
 let cachedClient: SupabaseClient<Database> | null = null;
 let cachedFingerprint: string | null = null;
 
@@ -43,22 +41,7 @@ export function createBYOClient(
 export function getDynamicSupabase(): SupabaseClient<Database> | null {
   if (typeof window === "undefined") return null;
 
-  let supabaseUrl = "";
-  let supabaseAnonKey = "";
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<{
-      supabaseUrl: unknown;
-      supabaseAnonKey: unknown;
-    }>;
-    supabaseUrl = typeof parsed.supabaseUrl === "string" ? parsed.supabaseUrl : "";
-    supabaseAnonKey =
-      typeof parsed.supabaseAnonKey === "string" ? parsed.supabaseAnonKey : "";
-  } catch {
-    return null;
-  }
+  const { supabaseUrl, supabaseAnonKey } = getBYOConfig();
 
   if (!supabaseUrl || !supabaseAnonKey) return null;
 
@@ -169,10 +152,9 @@ export async function fetchUserSettings(): Promise<
 export async function syncUserSettingsToLocal(): Promise<string> {
   const settings = await fetchUserSettings();
   const geminiApiKey = settings?.gemini_api_key ?? "";
-  if (geminiApiKey) {
-    const current = getBYOConfig();
-    setBYOConfig({ ...current, geminiApiKey });
-  }
+  // DBの値で不足分のみ補完（既にlocalにある場合は尊重）
+  const current = getBYOConfig();
+  if (geminiApiKey && !current.geminiApiKey) setBYOConfig({ ...current, geminiApiKey });
   return geminiApiKey;
 }
 
