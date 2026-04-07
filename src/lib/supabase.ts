@@ -9,6 +9,16 @@ const STORAGE_KEY = "BYO_CONFIG";
 let cachedClient: SupabaseClient<Database> | null = null;
 let cachedFingerprint: string | null = null;
 
+function getSiteUrl(): string {
+  const fromEnv =
+    typeof process !== "undefined" && process.env.NEXT_PUBLIC_SITE_URL
+      ? String(process.env.NEXT_PUBLIC_SITE_URL)
+      : "";
+  if (fromEnv) return fromEnv.replace(/\/+$/, "");
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  return "http://localhost:3000";
+}
+
 /**
  * BYO方式: ユーザー提供のURL/キーからSupabaseクライアントを動的生成する。
  * サーバー側の環境変数には依存しない。
@@ -92,7 +102,14 @@ export async function signUpWithEmail(
   const client = getDynamicSupabase();
   if (!client) throw new Error("Supabase の設定が未完了です（URL / Anon Key を設定してください）");
 
-  const { data, error } = await client.auth.signUp({ email, password });
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+    options: {
+      // 認証メール内リンクのリダイレクト先を本番URLへ寄せる（Supabase側のURL設定も必須）
+      emailRedirectTo: `${getSiteUrl()}/login`,
+    },
+  });
   if (error) throw new Error(error.message);
 
   // メール確認が必要な場合 session は null
@@ -162,9 +179,11 @@ export async function syncUserSettingsToLocal(): Promise<string> {
 /**
  * user_settings を upsert する（ログイン後の設定保存に使用）。
  */
-export async function upsertUserSettings(
-  geminiApiKey: string
-): Promise<void> {
+export async function upsertUserSettings(input: {
+  geminiApiKey?: string;
+  userDisplayName?: string;
+  userOrganization?: string;
+}): Promise<void> {
   const client = getDynamicSupabase();
   if (!client) throw new Error("Supabase クライアントが未初期化です");
 
@@ -173,9 +192,19 @@ export async function upsertUserSettings(
 
   // supabase-js の型推論が `never` に落ちる環境があるため、ここだけ緩める
   const { error } = await (client.from("user_settings") as any).upsert(
-    { user_id: user.id, gemini_api_key: geminiApiKey },
+    {
+      user_id: user.id,
+      ...(input.geminiApiKey !== undefined ? { gemini_api_key: input.geminiApiKey } : {}),
+      ...(input.userDisplayName !== undefined ? { user_display_name: input.userDisplayName } : {}),
+      ...(input.userOrganization !== undefined ? { user_organization: input.userOrganization } : {}),
+    },
     { onConflict: "user_id" }
   );
 
   if (error) throw new Error(error.message);
+}
+
+// 互換: 旧シグネチャ（geminiApiKey 文字列）を残す
+export async function upsertUserSettingsGeminiKey(geminiApiKey: string): Promise<void> {
+  return await upsertUserSettings({ geminiApiKey });
 }

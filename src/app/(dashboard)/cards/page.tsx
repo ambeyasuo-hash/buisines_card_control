@@ -244,6 +244,9 @@ export default function CardsPage() {
 
                 <div className="min-w-0 w-[44%] sm:w-[40%]">
                   <div className="text-sm leading-5 truncate">{company}</div>
+                  <div className="text-[11px] leading-4 text-muted-foreground truncate">
+                    {c.location_name ?? ""}
+                  </div>
                 </div>
 
                 <div className="w-[6.5rem] sm:w-28 text-right">

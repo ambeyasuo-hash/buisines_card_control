@@ -7,6 +7,8 @@ CREATE TABLE user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   gemini_api_key TEXT NOT NULL DEFAULT '',
+  user_display_name TEXT NOT NULL DEFAULT '',
+  user_organization TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(user_id)
@@ -48,6 +50,8 @@ CREATE TABLE categories (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   color_hex TEXT DEFAULT '#6366f1',
+  email_tone TEXT NOT NULL DEFAULT '',
+  category_footer TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

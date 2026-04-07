@@ -163,3 +163,137 @@ export async function geoToLocationName(lat: number, lng: number): Promise<strin
     return null;
   }
 }
+
+const EMAIL_SYSTEM_INSTRUCTION = `
+あなたは「お礼メール」の下書き作成器です。与えられた名刺情報とユーザー設定・カテゴリ設定に基づき、丁寧で短いメール文面を作成してください。
+出力は必ず JSON のみ。Markdown、説明文、コードフェンスは禁止。
+次のスキーマで返してください:
+{
+  "subject": string,
+  "body": string
+}
+`.trim();
+
+export async function generateThankYouEmailDraft(input: {
+  toName: string;
+  toCompany?: string;
+  notes?: string;
+  exchangedAt?: string;
+  locationName?: string;
+  userDisplayName?: string;
+  userOrganization?: string;
+  emailTone?: string;
+  categoryFooter?: string;
+}): Promise<{ subject: string; body: string }> {
+  if (typeof window === "undefined") {
+    throw new Error("generateThankYouEmailDraft はクライアントサイドでのみ実行できます");
+  }
+  const { geminiApiKey } = getBYOConfig();
+  if (!geminiApiKey) throw new Error("Gemini API Key が未設定です");
+
+  const genAI = new GoogleGenerativeAI(geminiApiKey);
+  const model = genAI.getGenerativeModel({
+    model: MODEL,
+    systemInstruction: EMAIL_SYSTEM_INSTRUCTION,
+  });
+
+  const prompt = {
+    toName: input.toName,
+    toCompany: input.toCompany ?? null,
+    exchangedAt: input.exchangedAt ?? null,
+    locationName: input.locationName ?? null,
+    notes: input.notes ?? null,
+    tone: input.emailTone ?? null,
+    user: {
+      displayName: input.userDisplayName ?? null,
+      organization: input.userOrganization ?? null,
+    },
+    categoryFooter: input.categoryFooter ?? null,
+  };
+
+  const res = await model.generateContent(
+    `次の情報から、日本語のお礼メールを作成してください。\n${JSON.stringify(prompt)}`
+  );
+  const text = res.response.text().trim();
+  const jsonText = stripJsonFences(text);
+  const parsed = JSON.parse(jsonText) as { subject: string; body: string };
+  return { subject: parsed.subject ?? "", body: parsed.body ?? "" };
+}
+
+const FOLLOWUP_EMAIL_SYSTEM_INSTRUCTION = `
+あなたは一流のサービス業コンサルタントの秘書です。
+与えられた情報をもとに、相手に不快感を与えない丁寧な日本語で、次の一歩（次回の打ち合わせ/簡単な提案/日程調整など）を自然に促すフォローアップメールを作成してください。
+
+必須要件:
+- [場所] での出会いに触れること（不明な場合は無理に作らない）
+- [メモ] の内容を自然に盛り込むこと（空の場合は無理に作らない）
+- [トーン] に従うこと（空の場合は標準的に丁寧）
+- 出力は必ず JSON のみ。Markdown、説明文、コードフェンスは禁止。
+
+次のスキーマで返してください:
+{
+  "subject": string,
+  "body": string
+}
+`.trim();
+
+export async function generateFollowUpEmail(input: {
+  // 自分
+  userDisplayName?: string;
+  userOrganization?: string;
+
+  // 相手（名刺）
+  toName: string;
+  toCompany?: string;
+  toDepartment?: string;
+  toTitle?: string;
+
+  // 文脈
+  exchangedAt?: string;
+  locationName?: string;
+  notes?: string;
+
+  // カテゴリ設定
+  emailTone?: string;
+  categoryFooter?: string;
+}): Promise<{ subject: string; body: string }> {
+  if (typeof window === "undefined") {
+    throw new Error("generateFollowUpEmail はクライアントサイドでのみ実行できます");
+  }
+  const { geminiApiKey } = getBYOConfig();
+  if (!geminiApiKey) throw new Error("Gemini API Key が未設定です");
+
+  const genAI = new GoogleGenerativeAI(geminiApiKey);
+  const model = genAI.getGenerativeModel({
+    model: MODEL,
+    systemInstruction: FOLLOWUP_EMAIL_SYSTEM_INSTRUCTION,
+  });
+
+  const payload = {
+    user: {
+      displayName: input.userDisplayName ?? null,
+      organization: input.userOrganization ?? null,
+    },
+    to: {
+      name: input.toName,
+      company: input.toCompany ?? null,
+      department: input.toDepartment ?? null,
+      title: input.toTitle ?? null,
+    },
+    context: {
+      exchangedAt: input.exchangedAt ?? null,
+      locationName: input.locationName ?? null,
+      notes: input.notes ?? null,
+    },
+    tone: input.emailTone ?? null,
+    categoryFooter: input.categoryFooter ?? null,
+  };
+
+  const res = await model.generateContent(
+    `次の情報から、日本語のフォローアップメールを作成してください。\n${JSON.stringify(payload)}`
+  );
+  const text = res.response.text().trim();
+  const jsonText = stripJsonFences(text);
+  const parsed = JSON.parse(jsonText) as { subject: string; body: string };
+  return { subject: parsed.subject ?? "", body: parsed.body ?? "" };
+}

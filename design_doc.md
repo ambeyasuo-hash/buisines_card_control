@@ -24,6 +24,12 @@
 ### `user_settings`
 - `user_id`: uuid (FK to auth.users, UNIQUE)
 - `gemini_api_key`: text (暗号化推奨だが、まずは RLS で保護)
+- `user_display_name`: text (メール署名用の表示名)
+- `user_organization`: text (メール署名用の所属)
+
+### `categories`
+- `email_tone`: text (カテゴリ別の文体トーン指示)
+- `category_footer`: text (カテゴリ専用の署名/追伸)
 
 ### `business_cards`
 - `user_id`: uuid (RLS 用)
@@ -44,4 +50,5 @@
 - `src/app/settings/page.tsx`: BYO/SQL設定
 - `src/app/(dashboard)/cards/page.tsx`: スリムリスト一覧
 - `src/app/(dashboard)/cards/new/page.tsx`: OCRスキャン画面
+- `src/app/(dashboard)/cards/[id]/page.tsx`: 詳細・編集・位置情報・AIメール作成
 - `src/hooks/useBYOConfig.ts`: 設定管理・DB同期ロジック

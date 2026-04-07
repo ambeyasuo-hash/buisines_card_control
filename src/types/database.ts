@@ -26,6 +26,8 @@ export interface Database {
           id: string;
           user_id: string;
           gemini_api_key: string;
+          user_display_name: string;
+          user_organization: string;
           created_at: string;
           updated_at: string;
         };
@@ -33,6 +35,8 @@ export interface Database {
           id?: string;
           user_id: string;
           gemini_api_key?: string;
+          user_display_name?: string;
+          user_organization?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -78,6 +82,8 @@ export interface Database {
           user_id: string;
           name: string;
           color_hex: string;
+          email_tone: string;
+          category_footer: string;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["categories"]["Row"], "id" | "created_at">;

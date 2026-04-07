@@ -10,6 +10,8 @@ export type Category = {
   id: string;
   name: string;
   color_hex: string;
+  email_tone?: string;
+  category_footer?: string;
 };
 
 export type BusinessCard = {

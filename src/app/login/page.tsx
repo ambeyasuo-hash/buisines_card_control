@@ -79,6 +79,12 @@ export default function LoginPage() {
           <div className="text-black/60">
             メール内のリンクをクリックして登録を完了してください。
           </div>
+          <div className="mt-3 text-xs text-black/55 leading-relaxed">
+            ※ 本番環境では Supabase Dashboard の{" "}
+            <span className="font-medium">Authentication &gt; URL Configuration</span>{" "}
+            に本番URL（例: Vercel のURL）を追加してください。未設定だと認証メールの遷移先が{" "}
+            <span className="font-medium">localhost</span> になることがあります。
+          </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">

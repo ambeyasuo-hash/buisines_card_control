@@ -7,9 +7,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSupabase } from "@/hooks/useSupabase";
 import type { BusinessCard } from "@/types";
-import { geoToLocationName } from "@/lib/gemini";
+import { geoToLocationName, generateFollowUpEmail } from "@/lib/gemini";
 import { prefetchGeolocation } from "@/lib/geolocation";
 import type { Database } from "@/types/database";
+import { TimeoutError, withTimeout } from "@/lib/async";
 
 type EditState = {
   full_name: string;
@@ -33,6 +34,15 @@ type EditState = {
 
 function toStr(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function toMailtoUrl(input: { to?: string; subject: string; body: string }): string {
+  // mailto: はクライアント/メーラー実装差が大きいので、個別に encodeURIComponent する。
+  // 改行は CRLF の方が維持されやすい（iOS/Androidの一部メーラー対策）。
+  const subject = encodeURIComponent(input.subject);
+  const body = encodeURIComponent(input.body.replace(/\n/g, "\r\n"));
+  const to = input.to ? `mailto:${encodeURIComponent(input.to)}` : "mailto:";
+  return `${to}?subject=${subject}&body=${body}`;
 }
 
 function toEditState(card: any): EditState {
@@ -91,6 +101,16 @@ export default function CardDetailPage() {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [card, setCard] = useState<any | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [geoErr, setGeoErr] = useState<string | null>(null);
+  const [mailStatus, setMailStatus] = useState<
+    | { state: "idle" }
+    | { state: "running" }
+    | { state: "ok"; subject: string; body: string; mailto: string }
+    | { state: "ng"; message: string }
+  >({ state: "idle" });
+  const [userSettings, setUserSettings] = useState<Database["public"]["Tables"]["user_settings"]["Row"] | null>(null);
+  const [category, setCategory] = useState<Database["public"]["Tables"]["categories"]["Row"] | null>(null);
 
   const [edit, setEdit] = useState<EditState | null>(null);
 
@@ -113,8 +133,20 @@ export default function CardDetailPage() {
 
         if (res.error) throw res.error;
         if (cancelled) return;
-        setCard(res.data ?? null);
-        setEdit(res.data ? toEditState(res.data) : null);
+        const dataAny = res.data as any;
+        setCard(dataAny ?? null);
+        setEdit(dataAny ? toEditState(dataAny) : null);
+
+        const [settingsRes, catRes] = await Promise.all([
+          c.from("user_settings").select("*").maybeSingle(),
+          dataAny?.category_id
+            ? c.from("categories").select("*").eq("id", dataAny.category_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null } as any),
+        ]);
+        if (!cancelled) {
+          setUserSettings((settingsRes.data ?? null) as any);
+          setCategory((catRes.data ?? null) as any);
+        }
       } catch (e) {
         const message = e instanceof Error ? e.message : "読み込みに失敗しました";
         if (!cancelled) setErrorMsg(message);
@@ -176,13 +208,22 @@ export default function CardDetailPage() {
       };
 
       // supabase-js の型推論が `never` に落ちる環境があるため、ここだけクエリビルダーを緩める
-      const { error } = await (client.from("business_cards") as any)
-        .update(patch)
-        .eq("id", id);
+      const { error } = (await withTimeout(
+        (client.from("business_cards") as any).update(patch).eq("id", id),
+        30_000,
+        "保存がタイムアウトしました（ネットワークをご確認ください）"
+      )) as any;
       if (error) throw error;
-      router.refresh();
+      setToast("保存しました");
+      window.setTimeout(() => setToast(null), 1200);
+      window.setTimeout(() => router.replace("/cards"), 650);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "保存に失敗しました";
+      const message =
+        e instanceof TimeoutError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "保存に失敗しました";
       setErrorMsg(message);
     } finally {
       setSaving(false);
@@ -195,11 +236,20 @@ export default function CardDetailPage() {
     setSaving(true);
     setErrorMsg(null);
     try {
-      const { error } = await client.from("business_cards").delete().eq("id", id);
+      const { error } = (await withTimeout(
+        client.from("business_cards").delete().eq("id", id),
+        30_000,
+        "削除がタイムアウトしました（ネットワークをご確認ください）"
+      )) as any;
       if (error) throw error;
       router.replace("/cards");
     } catch (e) {
-      const message = e instanceof Error ? e.message : "削除に失敗しました";
+      const message =
+        e instanceof TimeoutError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "削除に失敗しました";
       setErrorMsg(message);
     } finally {
       setSaving(false);
@@ -210,22 +260,72 @@ export default function CardDetailPage() {
     if (!edit) return;
     setSaving(true);
     setErrorMsg(null);
+    setGeoErr(null);
     try {
-      const loc = await prefetchGeolocation();
+      const loc = await withTimeout(
+        prefetchGeolocation(),
+        30_000,
+        "位置情報取得がタイムアウトしました（権限/ネットワークをご確認ください）"
+      );
       if (!loc) {
-        setErrorMsg("位置情報を取得できませんでした（権限/設定をご確認ください）");
+        setGeoErr("位置情報を取得できませんでした（権限/設定をご確認ください）");
         return;
       }
-      const name = await geoToLocationName(loc.lat, loc.lng);
+      const name = await withTimeout(
+        geoToLocationName(loc.lat, loc.lng),
+        30_000,
+        "地名変換がタイムアウトしました（ネットワークをご確認ください）"
+      );
+      const fallback = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
       setEdit({
         ...edit,
         location_lat: String(loc.lat),
         location_lng: String(loc.lng),
         location_accuracy_m: String(loc.accuracyMeters),
-        location_name: name ?? edit.location_name,
+        location_name: name ?? fallback,
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onGenerateMail() {
+    if (!edit) return;
+    setMailStatus({ state: "running" });
+    try {
+      const draft = await withTimeout(
+        generateFollowUpEmail({
+          toName: edit.full_name,
+          toCompany: edit.company,
+          toDepartment: edit.department,
+          toTitle: edit.title,
+          notes: edit.notes,
+          exchangedAt: edit.exchanged_at,
+          locationName: edit.location_name,
+          userDisplayName: userSettings?.user_display_name,
+          userOrganization: userSettings?.user_organization,
+          emailTone: category?.email_tone,
+          categoryFooter: category?.category_footer,
+        }),
+        30_000,
+        "メール生成がタイムアウトしました（ネットワークをご確認ください）"
+      );
+
+      const mailto = toMailtoUrl({
+        to: edit.email ? edit.email.trim() : undefined,
+        subject: draft.subject,
+        body: draft.body,
+      });
+
+      setMailStatus({ state: "ok", subject: draft.subject, body: draft.body, mailto });
+    } catch (e) {
+      const message =
+        e instanceof TimeoutError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "メール生成に失敗しました";
+      setMailStatus({ state: "ng", message });
     }
   }
 
@@ -247,14 +347,6 @@ export default function CardDetailPage() {
           </Link>
           <button
             type="button"
-            onClick={onDelete}
-            disabled={saving || loading || !card}
-            className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium text-destructive disabled:opacity-50"
-          >
-            削除
-          </button>
-          <button
-            type="button"
             onClick={onSave}
             disabled={saving || loading || !canEdit}
             className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
@@ -263,6 +355,12 @@ export default function CardDetailPage() {
           </button>
         </div>
       </div>
+
+      {toast ? (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 rounded-full border bg-white px-4 py-2 text-sm shadow">
+          {toast}
+        </div>
+      ) : null}
 
       {errorMsg ? (
         <div className="mb-4 rounded-md border bg-card p-3 text-sm text-destructive">
@@ -276,6 +374,85 @@ export default function CardDetailPage() {
         <div className="text-sm text-muted-foreground">データが見つかりません。</div>
       ) : (
         <div className="space-y-6">
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">AIメール作成</div>
+                <div className="text-sm text-muted-foreground">
+                  ユーザー設定（表示名/所属）とカテゴリ設定（トーン/署名）を反映して生成します。
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onGenerateMail}
+                className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+                disabled={mailStatus.state === "running"}
+              >
+                {mailStatus.state === "running" ? "生成中..." : "AIメール作成"}
+              </button>
+            </div>
+
+            {mailStatus.state === "ng" ? (
+              <div className="mt-3 rounded-md border bg-background p-3 text-sm text-destructive">
+                {mailStatus.message}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={onGenerateMail}
+                    className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium"
+                  >
+                    再試行
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {mailStatus.state === "ok" ? (
+              <div className="mt-4 grid gap-3">
+                <div className="grid gap-1.5">
+                  <div className="text-xs text-muted-foreground">件名</div>
+                  <input
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    value={mailStatus.subject}
+                    readOnly
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <div className="text-xs text-muted-foreground">本文（コピー用）</div>
+                  <textarea
+                    className="min-h-40 w-full rounded-md border bg-background p-3 text-sm"
+                    value={mailStatus.body}
+                    readOnly
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={mailStatus.mailto}
+                    className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+                  >
+                    メーラーを起動
+                  </a>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(mailStatus.body);
+                        setToast("コピーしました");
+                        window.setTimeout(() => setToast(null), 1000);
+                      } catch {
+                        setToast("コピーに失敗しました");
+                        window.setTimeout(() => setToast(null), 1200);
+                      }
+                    }}
+                    className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium"
+                  >
+                    本文をコピー
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-lg border bg-card p-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
@@ -376,6 +553,22 @@ export default function CardDetailPage() {
               </button>
             </div>
 
+            {geoErr ? (
+              <div className="mb-3 rounded-md border bg-background p-3 text-sm text-destructive">
+                {geoErr}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={onUpdateLocation}
+                    className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium"
+                    disabled={saving}
+                  >
+                    再試行
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
                 label="地名 (location_name)"
@@ -407,6 +600,20 @@ export default function CardDetailPage() {
               value={edit.notes}
               onChange={(e) => setEdit({ ...edit, notes: e.target.value })}
             />
+          </section>
+
+          <section className="rounded-lg border bg-card p-4">
+            <div className="text-sm text-muted-foreground mb-3">
+              削除は取り消せません。誤操作防止のため、画面下部に配置しています。
+            </div>
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={saving || loading || !card}
+              className="inline-flex h-12 w-full items-center justify-center rounded-md border bg-background text-sm font-medium text-destructive disabled:opacity-50"
+            >
+              削除
+            </button>
           </section>
         </div>
       )}
