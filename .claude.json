@@ -1,0 +1,19 @@
+{
+    "ignore": [
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "public/**",
+      ".git/**",
+      "**/*.test.ts",
+      "**/*.spec.ts"
+    ],
+    "autoConfirm": false,
+    "maxTokens": 4000,
+    "rules": [
+      "冗長な解説を徹底的に避け、コードの追加・修正（差分更新）を最優先すること",
+      "design_doc.md v1.5 を聖典とし、勝手な仕様変更や機能削除を行わないこと",
+      "全ソースファイルの先頭に // (c) 2026 ambe / Business_Card_Folder を含めること",
+      "Next.js 15 (App Router) と Tailwind CSS v4 の最新仕様を遵守すること"
+    ]
+  }
