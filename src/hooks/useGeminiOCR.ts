@@ -3,7 +3,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { analyzeBusinessCard } from "@/lib/gemini";
+import { analyzeBusinessCard } from "@/lib/ocr";
 import { withTimeout, TimeoutError } from "@/lib/async";
 import type { CardOCRResult } from "@/types";
 
