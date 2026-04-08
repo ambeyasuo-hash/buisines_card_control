@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithEmail, signUpWithEmail, syncUserSettingsToLocal } from "@/lib/supabase";
+import { signInWithEmail, signUpWithEmail } from "@/lib/supabase";
 import { getBYOConfig, setBYOConfig } from "@/lib/utils";
 
 type Mode = "signin" | "signup";
@@ -56,7 +56,6 @@ export default function LoginPage() {
     try {
       if (mode === "signin") {
         await signInWithEmail(email, password);
-        await syncUserSettingsToLocal();
         router.replace("/");
       } else {
         const { needsConfirmation } = await signUpWithEmail(email, password);
@@ -66,7 +65,6 @@ export default function LoginPage() {
         }
         // メール確認不要の場合はそのままサインイン
         await signInWithEmail(email, password);
-        await syncUserSettingsToLocal();
         router.replace("/");
       }
     } catch (err) {

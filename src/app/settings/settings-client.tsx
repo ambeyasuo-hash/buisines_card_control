@@ -18,7 +18,6 @@ export default function SettingsClient({ schemaSql }: Props) {
 
   const [supabaseUrl, setSupabaseUrl] = useState(config.supabaseUrl);
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(config.supabaseAnonKey);
-  const [geminiApiKey, setGeminiApiKey] = useState(config.geminiApiKey);
 
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
@@ -54,7 +53,6 @@ export default function SettingsClient({ schemaSql }: Props) {
     if (!loaded) return;
     setSupabaseUrl(config.supabaseUrl);
     setSupabaseAnonKey(config.supabaseAnonKey);
-    setGeminiApiKey(config.geminiApiKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
 
@@ -109,7 +107,7 @@ export default function SettingsClient({ schemaSql }: Props) {
     };
   }, [loaded]);
 
-  const canSave = Boolean(supabaseUrl && supabaseAnonKey && geminiApiKey);
+  const canSave = Boolean(supabaseUrl && supabaseAnonKey);
 
   async function onCopySql() {
     try {
@@ -123,7 +121,7 @@ export default function SettingsClient({ schemaSql }: Props) {
   }
 
   function onSave() {
-    save({ supabaseUrl, supabaseAnonKey, geminiApiKey });
+    save({ supabaseUrl, supabaseAnonKey });
     setSaveMsg("保存しました");
     window.setTimeout(() => setSaveMsg(null), 1500);
   }
@@ -132,7 +130,6 @@ export default function SettingsClient({ schemaSql }: Props) {
     clear();
     setSupabaseUrl("");
     setSupabaseAnonKey("");
-    setGeminiApiKey("");
     setSaveMsg("削除しました");
     window.setTimeout(() => setSaveMsg(null), 1500);
   }
@@ -199,7 +196,7 @@ export default function SettingsClient({ schemaSql }: Props) {
           <div>
             <h2 className="font-semibold text-slate-50">BYO キー設定</h2>
             <p className="text-sm text-slate-400">
-              Supabase URL / Anon Key と Gemini API Key を入力してください。
+              Supabase URL / Anon Key を入力してください。
             </p>
           </div>
           <div className="text-xs text-slate-400">
@@ -247,28 +244,6 @@ export default function SettingsClient({ schemaSql }: Props) {
               placeholder="eyJhbGciOi..."
               value={supabaseAnonKey}
               onChange={(e) => setSupabaseAnonKey(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-50">
-              <span>Gemini API Key</span>
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
-              >
-                Google AI Studio <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </label>
-            <input
-              className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-slate-500"
-              placeholder="AIza..."
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
               autoComplete="off"
               spellCheck={false}
             />

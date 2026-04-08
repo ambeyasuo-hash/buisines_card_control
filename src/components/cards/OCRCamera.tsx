@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Camera } from "lucide-react";
 import { prefetchGeolocation } from "@/lib/geolocation";
-import { analyzeBusinessCard } from "@/lib/gemini";
+import { analyzeBusinessCard } from "@/lib/ocr";
 import { withTimeout, TimeoutError } from "@/lib/async";
 
 export default function OCRCamera() {

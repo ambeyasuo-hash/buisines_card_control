@@ -13,10 +13,8 @@ export default function BYOSettingsForm() {
   const [draft, setDraft] = useState<BYOConfig>({
     supabaseUrl: "",
     supabaseAnonKey: "",
-    geminiApiKey: "",
   });
   const [showAnonKey, setShowAnonKey] = useState(false);
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [status, setStatus] = useState<SaveStatus>("idle");
 
   // localStorage 読み込み完了後にフォームを初期化
@@ -36,7 +34,7 @@ export default function BYOSettingsForm() {
 
   function handleClear() {
     clear();
-    setDraft({ supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" });
+    setDraft({ supabaseUrl: "", supabaseAnonKey: "" });
     flash("cleared");
   }
 
@@ -95,24 +93,6 @@ export default function BYOSettingsForm() {
           />
           <ToggleVisibility show={showAnonKey} onToggle={() => setShowAnonKey((v) => !v)} />
         </div>
-      </Field>
-
-      {/* Gemini API Key */}
-      <Field label="Gemini API Key" htmlFor="gemini-key">
-        <div className="relative">
-          <input
-            id="gemini-key"
-            type={showGeminiKey ? "text" : "password"}
-            placeholder="AIzaSy..."
-            value={draft.geminiApiKey}
-            onChange={(e) => handleChange("geminiApiKey", e.target.value)}
-            className={`${inputClass} pr-10`}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <ToggleVisibility show={showGeminiKey} onToggle={() => setShowGeminiKey((v) => !v)} />
-        </div>
-        <p className="mt-1 text-xs text-black/40">OCR機能を使う場合に必要です</p>
       </Field>
 
       {/* アクション */}

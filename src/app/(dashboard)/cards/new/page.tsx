@@ -5,7 +5,9 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
-import { analyzeBusinessCard, generateThankYouEmailDraft } from "@/lib/gemini";
+import { analyzeBusinessCard } from "@/lib/ocr";
+import { preprocessCardImage } from "@/lib/image";
+import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
 import { toMailtoUrl } from "@/lib/utils";
 import { useSupabase } from "@/hooks/useSupabase";
@@ -134,10 +136,11 @@ export default function NewCardPage() {
   const run = useCallback(async (f: File) => {
     setStatus({ state: "running" });
     try {
+      const processed = await preprocessCardImage(f);
       const res = await withTimeout(
-        analyzeBusinessCard(f),
-        30_000,
-        "OCR解析がタイムアウトしました（ネットワークをご確認ください）"
+        analyzeBusinessCard(processed),
+        60_000,
+        "OCR解析がタイムアウトしました"
       );
       setForm((prev) => ({
         ...prev,
@@ -242,7 +245,7 @@ export default function NewCardPage() {
         <div className="flex-1 flex items-center justify-center px-5 py-8">
           <div className="text-center space-y-4">
             <h1 className="text-2xl font-bold mb-2">設定が必要です</h1>
-            <p className="text-sm text-slate-400 mb-4">先に接続設定（Supabase URL / Anon Key / Gemini Key）を完了してください。</p>
+            <p className="text-sm text-slate-400 mb-4">先に接続設定（Supabase URL / Anon Key）を完了してください。</p>
             <a href="/settings" className="inline-flex h-11 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-medium text-white hover:bg-blue-700 transition">
               設定へ
             </a>
@@ -334,7 +337,7 @@ export default function NewCardPage() {
                   <div className="absolute inset-x-0 bottom-0 flex justify-center p-3">
                     <div className="flex items-center gap-2 rounded-full bg-slate-950/80 px-4 py-2 backdrop-blur">
                       <div className="h-2 w-2 rounded-full bg-blue-400 pulse-dot" />
-                      <span className="text-xs font-medium text-white/90">AIが名刺を解析中...</span>
+                      <span className="text-xs font-medium text-white/90">ブラウザで名刺を解析中...</span>
                     </div>
                   </div>
                 </>

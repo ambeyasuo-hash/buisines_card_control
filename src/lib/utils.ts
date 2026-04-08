@@ -16,7 +16,7 @@ const LEGACY_STORAGE_KEY = "ambe_byo_config";
 
 export function getBYOConfig(): BYOConfig {
   if (typeof window === "undefined") {
-    return { supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" };
+    return { supabaseUrl: "", supabaseAnonKey: "" };
   }
   const envSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const envSupabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -30,15 +30,13 @@ export function getBYOConfig(): BYOConfig {
           typeof parsed.supabaseAnonKey === "string" && parsed.supabaseAnonKey
             ? parsed.supabaseAnonKey
             : envSupabaseAnonKey,
-        geminiApiKey: typeof parsed.geminiApiKey === "string" ? parsed.geminiApiKey : "",
       };
     }
 
     // 互換性: 旧キーが残っている場合は読み取り、最新キーへ移行する
     const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!legacyRaw) {
-      // localStorage が空の場合は環境変数（Vercel等）をデフォルト値として優先利用する
-      return { supabaseUrl: envSupabaseUrl, supabaseAnonKey: envSupabaseAnonKey, geminiApiKey: "" };
+      return { supabaseUrl: envSupabaseUrl, supabaseAnonKey: envSupabaseAnonKey };
     }
     const legacyParsed = JSON.parse(legacyRaw) as Partial<BYOConfig>;
     const migrated: BYOConfig = {
@@ -50,12 +48,11 @@ export function getBYOConfig(): BYOConfig {
         typeof legacyParsed.supabaseAnonKey === "string" && legacyParsed.supabaseAnonKey
           ? legacyParsed.supabaseAnonKey
           : envSupabaseAnonKey,
-      geminiApiKey: typeof legacyParsed.geminiApiKey === "string" ? legacyParsed.geminiApiKey : "",
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
     return migrated;
   } catch {
-    return { supabaseUrl: envSupabaseUrl, supabaseAnonKey: envSupabaseAnonKey, geminiApiKey: "" };
+    return { supabaseUrl: envSupabaseUrl, supabaseAnonKey: envSupabaseAnonKey };
   }
 }
 
