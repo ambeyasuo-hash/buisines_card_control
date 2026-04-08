@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
 import { analyzeBusinessCard } from "@/lib/ocr";
-import { preprocessCardImage } from "@/lib/image";
+import { preprocessCardImage } from "@/lib/imageProcessor";
 import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
 import { toMailtoUrl } from "@/lib/utils";

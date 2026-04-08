@@ -32,6 +32,14 @@ async function getTesseractLib() {
  * Subsequent calls return the already-initialised Worker immediately.
  * Safe to call concurrently — only one Worker is ever created.
  * Automatically detects and uses CDN version if available.
+ *
+ * Configuration:
+ * - Languages: Japanese + English
+ * - OEM: 1 (LSTM neural networks for better accuracy)
+ * - Progress logging: suppressed for cleaner UX
+ *
+ * Note: Tesseract.js automatically detects and handles mixed text orientations
+ * (vertical/horizontal) during recognition without explicit PSM configuration.
  */
 export async function getOCRWorker(): Promise<Worker> {
   if (worker) return worker;
@@ -44,6 +52,7 @@ export async function getOCRWorker(): Promise<Worker> {
       logger: () => {},
       errorHandler: () => {},
     });
+
     worker = w;
     return w;
   })();
