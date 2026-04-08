@@ -2,6 +2,7 @@
 // vCard generation utility for contact export
 
 import { BusinessCard } from "@/types";
+import { downloadFile } from "@/lib/utils";
 
 export function generateVCard(card: BusinessCard): string {
   // Format date as YYYYMMDD for vCard
@@ -88,14 +89,6 @@ function escapeVCardValue(value: string): string {
 export function downloadVCard(card: BusinessCard): void {
   const vcard = generateVCard(card);
   const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-
-  const filename = `${card.full_name}_${card.exchanged_at.slice(0, 10)}.vcf`;
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const exchangedAt = card.exchanged_at ? card.exchanged_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  downloadFile(blob, `${card.full_name}_${exchangedAt}.vcf`);
 }

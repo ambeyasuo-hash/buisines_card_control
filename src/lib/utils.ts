@@ -67,3 +67,45 @@ export function clearBYOConfig(): void {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(LEGACY_STORAGE_KEY);
 }
+
+// ---------------------------------------------------------------------------
+// 共通ユーティリティ（連絡先・エクスポート用）
+// ---------------------------------------------------------------------------
+
+/**
+ * mailto: URL を生成する。
+ * 改行は CRLF で encode — iOS/Android メーラー対策。
+ */
+export function toMailtoUrl(input: {
+  to?: string;
+  subject?: string;
+  body?: string;
+}): string {
+  const to = input.to ? `mailto:${encodeURIComponent(input.to)}` : "mailto:";
+  const params: string[] = [];
+  if (input.subject) params.push(`subject=${encodeURIComponent(input.subject)}`);
+  if (input.body) params.push(`body=${encodeURIComponent(input.body.replace(/\n/g, "\r\n"))}`);
+  return params.length ? `${to}?${params.join("&")}` : to;
+}
+
+/**
+ * 電話番号から余分な文字を除去し tel: リンク用の文字列を生成する。
+ */
+export function cleanPhoneNumber(phone: string): string {
+  return phone.replace(/[\s\-()]/g, "");
+}
+
+/**
+ * Blob をブラウザでダウンロードさせる。
+ * vcard.ts / csv.ts の共通パターンをここに集約。
+ */
+export function downloadFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}

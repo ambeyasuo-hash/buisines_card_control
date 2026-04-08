@@ -6,17 +6,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSupabase } from "@/hooks/useSupabase";
 import { downloadCSV } from "@/lib/csv";
+import { cleanPhoneNumber, toMailtoUrl } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
 import type { BusinessCard, Category } from "@/types";
 
 type SortKey = "exchanged_desc" | "exchanged_asc" | "name_asc" | "name_desc";
-
-function cleanPhoneNumber(phone: string): string {
-  return phone.replace(/[\s\-()]/g, "");
-}
-
-function toMailtoUrl(to?: string): string {
-  return to ? `mailto:${encodeURIComponent(to)}` : "mailto:";
-}
 
 function formatDate(dateLike?: string) {
   if (!dateLike) return "";
@@ -177,18 +171,18 @@ export default function CardsPage() {
             <span className="font-bold text-white">名刺一覧</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => downloadCSV(filteredSorted)}
               disabled={loading || filteredSorted.length === 0}
-              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 text-xs font-bold text-slate-50 hover:bg-white/10 disabled:opacity-50 transition"
               title="CSV形式で全データをダウンロード"
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0-4v4m0 0H8m4 0h4M4 20h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               CSV
-            </button>
+            </Button>
             <Link href="/cards/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700 transition">
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -296,7 +290,7 @@ export default function CardsPage() {
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                 {c.email && (
                   <a
-                    href={toMailtoUrl(c.email)}
+                    href={toMailtoUrl({ to: c.email })}
                     onClick={(e) => e.stopPropagation()}
                     className="h-8 w-8 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 hover:bg-blue-500/20 transition text-sm"
                     title="メールを送信"

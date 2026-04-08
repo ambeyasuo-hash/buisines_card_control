@@ -3,13 +3,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSupabase } from "@/hooks/useSupabase";
+import { useEmailDraft } from "@/hooks/useEmailDraft";
 import type { BusinessCard } from "@/types";
 import { geoToLocationName, generateFollowUpEmail } from "@/lib/gemini";
 import { prefetchGeolocation } from "@/lib/geolocation";
 import { downloadVCard } from "@/lib/vcard";
+import { toMailtoUrl, cleanPhoneNumber } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { Toast } from "@/components/ui/Toast";
 import type { Database } from "@/types/database";
 import { TimeoutError, withTimeout } from "@/lib/async";
 
@@ -35,20 +40,6 @@ type EditState = {
 
 function toStr(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
-}
-
-function toMailtoUrl(input: { to?: string; subject: string; body: string }): string {
-  // mailto: はクライアント/メーラー実装差が大きいので、個別に encodeURIComponent する。
-  // 改行は CRLF の方が維持されやすい（iOS/Androidの一部メーラー対策）。
-  const subject = encodeURIComponent(input.subject);
-  const body = encodeURIComponent(input.body.replace(/\n/g, "\r\n"));
-  const to = input.to ? `mailto:${encodeURIComponent(input.to)}` : "mailto:";
-  return `${to}?subject=${subject}&body=${body}`;
-}
-
-function cleanPhoneNumber(phone: string): string {
-  // Remove spaces, hyphens, parentheses for tel: link
-  return phone.replace(/[\s\-()]/g, "");
 }
 
 function isValidUrl(str: string): boolean {
@@ -121,15 +112,8 @@ export default function CardDetailPage() {
   const [card, setCard] = useState<any | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [geoErr, setGeoErr] = useState<string | null>(null);
-  const [mailStatus, setMailStatus] = useState<
-    | { state: "idle" }
-    | { state: "running" }
-    | { state: "ok"; subject: string; body: string; mailto: string }
-    | { state: "ng"; message: string }
-  >({ state: "idle" });
   const [userSettings, setUserSettings] = useState<Database["public"]["Tables"]["user_settings"]["Row"] | null>(null);
   const [category, setCategory] = useState<Database["public"]["Tables"]["categories"]["Row"] | null>(null);
-
   const [edit, setEdit] = useState<EditState | null>(null);
 
   useEffect(() => {
@@ -174,12 +158,33 @@ export default function CardDetailPage() {
     }
 
     run();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [client, id]);
 
   const canEdit = useMemo(() => Boolean(edit), [edit]);
+
+  // メール下書き生成 — useEmailDraft フックに委譲
+  const mailGenerator = useCallback(() => {
+    if (!edit) return Promise.reject(new Error("データが読み込まれていません"));
+    return generateFollowUpEmail({
+      toName: edit.full_name,
+      toCompany: edit.company,
+      toDepartment: edit.department,
+      toTitle: edit.title,
+      notes: edit.notes,
+      exchangedAt: edit.exchanged_at,
+      locationName: edit.location_name,
+      userDisplayName: userSettings?.user_display_name,
+      userOrganization: userSettings?.user_organization,
+      emailTone: category?.email_tone,
+      categoryFooter: category?.category_footer,
+    });
+  }, [edit, userSettings, category]);
+
+  const { mailStatus, onGenerateMail } = useEmailDraft({
+    emailAddress: edit?.email,
+    generator: mailGenerator,
+  });
 
   if (!isConfigured) {
     return (
@@ -307,46 +312,6 @@ export default function CardDetailPage() {
     }
   }
 
-  async function onGenerateMail() {
-    if (!edit) return;
-    setMailStatus({ state: "running" });
-    try {
-      const draft = await withTimeout(
-        generateFollowUpEmail({
-          toName: edit.full_name,
-          toCompany: edit.company,
-          toDepartment: edit.department,
-          toTitle: edit.title,
-          notes: edit.notes,
-          exchangedAt: edit.exchanged_at,
-          locationName: edit.location_name,
-          userDisplayName: userSettings?.user_display_name,
-          userOrganization: userSettings?.user_organization,
-          emailTone: category?.email_tone,
-          categoryFooter: category?.category_footer,
-        }),
-        30_000,
-        "メール生成がタイムアウトしました（ネットワークをご確認ください）"
-      );
-
-      const mailto = toMailtoUrl({
-        to: edit.email ? edit.email.trim() : undefined,
-        subject: draft.subject,
-        body: draft.body,
-      });
-
-      setMailStatus({ state: "ok", subject: draft.subject, body: draft.body, mailto });
-    } catch (e) {
-      const message =
-        e instanceof TimeoutError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "メール生成に失敗しました";
-      setMailStatus({ state: "ng", message });
-    }
-  }
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       {/* Header */}
@@ -362,34 +327,30 @@ export default function CardDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             {card && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => downloadVCard(card)}
-                className="inline-flex h-10 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                 title="連絡先へ追加（vCard形式でダウンロード）"
               >
                 連絡先へ追加
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={onSave}
               disabled={saving || loading || !canEdit}
-              className="inline-flex h-10 items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
+              loading={saving}
             >
-              {saving ? "保存中..." : "保存"}
-            </button>
+              保存
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 px-4 py-6 max-w-4xl mx-auto w-full space-y-6">
-        {toast && (
-          <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 rounded-full border border-white/20 bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
-            {toast}
-          </div>
-        )}
+        <Toast message={toast} />
 
         {errorMsg && (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
@@ -403,35 +364,33 @@ export default function CardDetailPage() {
           <div className="text-sm text-slate-400">データが見つかりません。</div>
         ) : (
         <div className="space-y-6">
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-bold text-slate-50">📧 フォローアップメール</div>
-                <div className="text-sm text-slate-400">
-                  ユーザー設定（表示名/所属）とカテゴリ設定（トーン/署名）を反映して生成します。
-                </div>
-              </div>
-              <button
-                type="button"
+          {/* フォローアップメール */}
+          <SectionCard
+            headerRight={
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={onGenerateMail}
-                className="inline-flex h-10 items-center justify-center rounded-full border border-blue-500/50 bg-blue-500/10 px-4 text-sm font-medium text-blue-300 hover:bg-blue-500/20 transition disabled:opacity-50"
                 disabled={mailStatus.state === "running"}
+                loading={mailStatus.state === "running"}
+                className="border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
               >
-                {mailStatus.state === "running" ? "生成中..." : "メール生成"}
-              </button>
+                メール生成
+              </Button>
+            }
+          >
+            <div>
+              <div className="font-bold text-slate-50">📧 フォローアップメール</div>
+              <div className="text-sm text-slate-400">
+                ユーザー設定（表示名/所属）とカテゴリ設定（トーン/署名）を反映して生成します。
+              </div>
             </div>
 
             {mailStatus.state === "ng" ? (
               <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
                 {mailStatus.message}
                 <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={onGenerateMail}
-                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
-                  >
-                    再試行
-                  </button>
+                  <Button variant="secondary" size="sm" onClick={onGenerateMail}>再試行</Button>
                 </div>
               </div>
             ) : null}
@@ -461,8 +420,8 @@ export default function CardDetailPage() {
                   >
                     メーラーを起動
                   </a>
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(mailStatus.body);
@@ -473,67 +432,40 @@ export default function CardDetailPage() {
                         window.setTimeout(() => setToast(null), 1200);
                       }
                     }}
-                    className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
                   >
                     本文をコピー
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}
-          </section>
+          </SectionCard>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="font-bold text-slate-50 mb-4">基本情報</h3>
+          {/* 基本情報 */}
+          <SectionCard title="基本情報">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="氏名"
-                value={edit.full_name}
-                onChange={(v) => setEdit({ ...edit, full_name: v })}
-              />
-              <Field
-                label="かな"
-                value={edit.kana}
-                onChange={(v) => setEdit({ ...edit, kana: v })}
-              />
-              <Field
-                label="会社名"
-                value={edit.company}
-                onChange={(v) => setEdit({ ...edit, company: v })}
-              />
-              <Field
-                label="部署"
-                value={edit.department}
-                onChange={(v) => setEdit({ ...edit, department: v })}
-              />
-              <Field
-                label="役職"
-                value={edit.title}
-                onChange={(v) => setEdit({ ...edit, title: v })}
-              />
+              <Field label="氏名" value={edit.full_name} onChange={(v) => setEdit({ ...edit, full_name: v })} />
+              <Field label="かな" value={edit.kana} onChange={(v) => setEdit({ ...edit, kana: v })} />
+              <Field label="会社名" value={edit.company} onChange={(v) => setEdit({ ...edit, company: v })} />
+              <Field label="部署" value={edit.department} onChange={(v) => setEdit({ ...edit, department: v })} />
+              <Field label="役職" value={edit.title} onChange={(v) => setEdit({ ...edit, title: v })} />
               <div className="grid gap-1.5">
                 <label className="text-xs font-semibold text-slate-300">登録元</label>
                 <select
                   className="h-11 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white"
                   value={edit.source}
-                  onChange={(e) =>
-                    setEdit({ ...edit, source: e.target.value as any })
-                  }
+                  onChange={(e) => setEdit({ ...edit, source: e.target.value as any })}
                 >
                   <option value="camera">camera</option>
                   <option value="line">line</option>
                   <option value="manual">manual</option>
                 </select>
               </div>
-              <Field
-                label="交換日"
-                value={edit.exchanged_at}
-                onChange={(v) => setEdit({ ...edit, exchanged_at: v })}
-              />
+              <Field label="交換日" value={edit.exchanged_at} onChange={(v) => setEdit({ ...edit, exchanged_at: v })} />
             </div>
-          </section>
+          </SectionCard>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="font-bold text-slate-50 mb-4">基本情報</h3>
+          {/* 連絡先 */}
+          <SectionCard title="連絡先">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-1.5">
                 <label className="text-xs font-semibold text-slate-300">メール</label>
@@ -545,7 +477,7 @@ export default function CardDetailPage() {
                   />
                   {edit.email && (
                     <a
-                      href={toMailtoUrl({ to: edit.email, subject: "", body: "" })}
+                      href={toMailtoUrl({ to: edit.email })}
                       className="h-11 w-11 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 hover:bg-blue-500/20 transition flex-shrink-0"
                       title="メールを送信"
                     >
@@ -573,11 +505,7 @@ export default function CardDetailPage() {
                   )}
                 </div>
               </div>
-              <Field
-                label="郵便番号"
-                value={edit.postal_code}
-                onChange={(v) => setEdit({ ...edit, postal_code: v })}
-              />
+              <Field label="郵便番号" value={edit.postal_code} onChange={(v) => setEdit({ ...edit, postal_code: v })} />
               <div className="grid gap-1.5">
                 <label className="text-xs font-semibold text-slate-300">URL</label>
                 <div className="flex items-center gap-2">
@@ -608,92 +536,67 @@ export default function CardDetailPage() {
                 />
               </div>
             </div>
-          </section>
+          </SectionCard>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <div className="font-semibold">位置情報</div>
-                <div className="text-sm text-slate-400">
-                  座標を取得し、Geminiで地名に変換して `location_name` に保存します。
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onUpdateLocation}
-                className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
-                disabled={saving}
-              >
+          {/* 位置情報 */}
+          <SectionCard
+            headerRight={
+              <Button variant="secondary" onClick={onUpdateLocation} disabled={saving}>
                 位置情報を更新
-              </button>
+              </Button>
+            }
+          >
+            <div>
+              <div className="font-semibold">位置情報</div>
+              <div className="text-sm text-slate-400">
+                座標を取得し、Geminiで地名に変換して `location_name` に保存します。
+              </div>
             </div>
 
             {geoErr ? (
-              <div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
+              <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
                 {geoErr}
                 <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={onUpdateLocation}
-                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-slate-50 hover:bg-white/10 transition"
-                    disabled={saving}
-                  >
-                    再試行
-                  </button>
+                  <Button variant="secondary" size="sm" onClick={onUpdateLocation} disabled={saving}>再試行</Button>
                 </div>
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="地名 (location_name)"
-                value={edit.location_name}
-                onChange={(v) => setEdit({ ...edit, location_name: v })}
-              />
-              <Field
-                label="精度(m)"
-                value={edit.location_accuracy_m}
-                onChange={(v) => setEdit({ ...edit, location_accuracy_m: v })}
-              />
-              <Field
-                label="緯度"
-                value={edit.location_lat}
-                onChange={(v) => setEdit({ ...edit, location_lat: v })}
-              />
-              <Field
-                label="経度"
-                value={edit.location_lng}
-                onChange={(v) => setEdit({ ...edit, location_lng: v })}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+              <Field label="地名 (location_name)" value={edit.location_name} onChange={(v) => setEdit({ ...edit, location_name: v })} />
+              <Field label="精度(m)" value={edit.location_accuracy_m} onChange={(v) => setEdit({ ...edit, location_accuracy_m: v })} />
+              <Field label="緯度" value={edit.location_lat} onChange={(v) => setEdit({ ...edit, location_lat: v })} />
+              <Field label="経度" value={edit.location_lng} onChange={(v) => setEdit({ ...edit, location_lng: v })} />
             </div>
-          </section>
+          </SectionCard>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          {/* メモ */}
+          <SectionCard>
             <div className="font-semibold mb-2">メモ</div>
             <textarea
               className="min-h-28 w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white placeholder-slate-500 resize-none"
               value={edit.notes}
               onChange={(e) => setEdit({ ...edit, notes: e.target.value })}
             />
-          </section>
+          </SectionCard>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          {/* 削除 */}
+          <SectionCard>
             <div className="text-sm text-slate-400 mb-3">
               削除は取り消せません。誤操作防止のため、画面下部に配置しています。
             </div>
-            <button
-              type="button"
+            <Button
+              variant="danger"
               onClick={onDelete}
               disabled={saving || loading || !card}
-              className="inline-flex h-12 w-full items-center justify-center rounded-full border border-red-500/30 bg-red-500/5 text-sm font-medium text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
+              className="w-full h-12"
             >
               削除
-            </button>
-          </section>
+            </Button>
+          </SectionCard>
         </div>
       )}
       </div>
     </div>
   );
 }
-
