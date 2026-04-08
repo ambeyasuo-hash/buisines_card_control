@@ -627,19 +627,17 @@ export default function NewCardPage() {
         </div>
       )}
 
-      {/* Toast — WASM status or user messages */}
-      {wasmStatus.state === "initializing" && (
-        <Toast message={`初期化中: WASM ライブラリをロード中...`} className="bottom-24" />
-      )}
-      {wasmStatus.state === "error" && (
-        <Toast message={`エラー: ${wasmStatus.message}`} className="bottom-24" />
-      )}
-      {!toast && wasmStatus.state !== "initializing" && wasmStatus.state !== "error" && (
-        <Toast message={toast} className="bottom-24" />
-      )}
-      {toast && (
-        <Toast message={toast} className="bottom-24" />
-      )}
+      {/* Toast — WASM status or user messages (WASM messages take priority) */}
+      <Toast
+        message={
+          wasmStatus.state === "initializing"
+            ? "初期化中: WASM ライブラリをロード中..."
+            : wasmStatus.state === "error"
+            ? `エラー: ${wasmStatus.message}`
+            : toast
+        }
+        className="bottom-24"
+      />
     </div>
   );
 }
