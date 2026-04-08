@@ -6,12 +6,13 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
 import { analyzeBusinessCard } from "@/lib/ocr";
-import { preprocessCardImage } from "@/lib/image";
+import { preprocessCardImage } from "@/lib/imageProcessor";
 import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
 import { toMailtoUrl } from "@/lib/utils";
 import { useSupabase } from "@/hooks/useSupabase";
 import { useEmailDraft } from "@/hooks/useEmailDraft";
+import { useWASMInit } from "@/hooks/useWASMInit";
 import { Toast } from "@/components/ui/Toast";
 import type { Category } from "@/types";
 
@@ -57,6 +58,7 @@ const EMPTY_FORM: FormState = {
 export default function NewCardPage() {
   const router = useRouter();
   const { client, isConfigured } = useSupabase();
+  const { status: wasmStatus, isReady: isWasmReady } = useWASMInit();
 
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<
@@ -104,7 +106,8 @@ export default function NewCardPage() {
     };
   }, [previewUrl]);
 
-  const isLoading = status.state === "running";
+  // Combined loading state: OCR processing OR WASM initialization
+  const isLoading = status.state === "running" || wasmStatus.state === "initializing";
 
   // メール下書き生成 — useEmailDraft フックに委譲
   const mailGenerator = useCallback(
@@ -273,13 +276,19 @@ export default function NewCardPage() {
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="text-xs font-semibold text-slate-400 mb-3">写真を撮ってOCR</div>
             <label htmlFor={inputId} className="block">
-              <div className="grid place-items-center py-4 rounded-xl bg-blue-600 hover:bg-blue-700 transition cursor-pointer">
+              <div className={`grid place-items-center py-4 rounded-xl transition cursor-pointer ${
+                isWasmReady
+                  ? "bg-blue-600 hover:bg-blue-700"
+                  : "bg-blue-600/40 opacity-50 cursor-not-allowed"
+              }`}>
                 <div className="flex flex-col items-center gap-2">
                   <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span className="text-sm font-bold text-white">写真を撮る</span>
+                  <span className="text-sm font-bold text-white">
+                    {isWasmReady ? "写真を撮る" : "初期化中..."}
+                  </span>
                 </div>
               </div>
             </label>
@@ -289,6 +298,7 @@ export default function NewCardPage() {
               accept="image/*"
               capture="environment"
               className="sr-only"
+              disabled={!isWasmReady}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 setFile(f);
@@ -617,8 +627,17 @@ export default function NewCardPage() {
         </div>
       )}
 
-      {/* Toast — ボトムバーの上に表示 */}
-      <Toast message={toast} className="bottom-24" />
+      {/* Toast — WASM status or user messages (WASM messages take priority) */}
+      <Toast
+        message={
+          wasmStatus.state === "initializing"
+            ? "初期化中: WASM ライブラリをロード中..."
+            : wasmStatus.state === "error"
+            ? `エラー: ${wasmStatus.message}`
+            : toast
+        }
+        className="bottom-24"
+      />
     </div>
   );
 }

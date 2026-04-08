@@ -47,20 +47,54 @@ async function canvasEnhance(file: File): Promise<File> {
 }
 
 /**
+ * OpenCV.js enhancement hook — placeholder for Phase 2 implementation.
+ * When `window.cv` is available, apply advanced image preprocessing:
+ * - Adaptive thresholding
+ * - Perspective correction
+ * - Deskew (Hough-line-based rotation detection)
+ * - Denoising
+ *
+ * Returns the original file if OpenCV is not available or processing fails.
+ */
+async function opencvEnhance(file: File): Promise<File> {
+  if (typeof window === "undefined" || !window.cv) {
+    return file;
+  }
+
+  try {
+    // Hook point: detailed OpenCV pipeline will be implemented in Phase 2
+    // For now, return the file unchanged — canvas preprocessing is sufficient
+    // TODO: Implement perspective transform, adaptive threshold, deskew
+    return file;
+  } catch {
+    // Graceful degradation if OpenCV processing fails
+    return file;
+  }
+}
+
+/**
  * Preprocess a business card image for optimal OCR accuracy.
  *
- * Applies grayscale conversion and contrast enhancement via Canvas API.
- * Gracefully degrades to the original File if any processing step fails.
+ * Applies layered preprocessing:
+ * 1. Canvas API: Grayscale conversion and contrast enhancement (always)
+ * 2. OpenCV.js: Advanced corrections if `window.cv` is available (future)
  *
- * OpenCV.js hook: when `window.cv` is loaded, extend this function with
- * adaptive thresholding and deskew (Hough-line-based rotation correction)
- * before returning the canvas-enhanced file.
+ * Gracefully degrades to the original File if any processing step fails.
  */
 export async function preprocessCardImage(file: File): Promise<File> {
   try {
-    return await canvasEnhance(file);
+    // Layer 1: Canvas-based preprocessing (always applied)
+    let processed = await canvasEnhance(file);
+
+    // Layer 2: OpenCV.js enhancements if available
+    // (currently a hook point; implementation pending)
+    if (typeof window !== "undefined" && window.cv) {
+      processed = await opencvEnhance(processed);
+    }
+
+    return processed;
   } catch {
-    // Fallback: return original if canvas operations fail
+    // Fallback: return original if any processing step fails
     return file;
   }
 }
