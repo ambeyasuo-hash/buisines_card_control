@@ -5,9 +5,9 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BYOConfig } from "@/types";
 import { getBYOConfig, setBYOConfig, clearBYOConfig } from "@/lib/utils";
-import { getSession, fetchUserSettings, signOut as supabaseSignOut } from "@/lib/supabase";
+import { getSession, signOut as supabaseSignOut, performHealthCheck } from "@/lib/supabase";
 
-const EMPTY: BYOConfig = { supabaseUrl: "", supabaseAnonKey: "", geminiApiKey: "" };
+const EMPTY: BYOConfig = { supabaseUrl: "", supabaseAnonKey: "" };
 
 export function useBYOConfig() {
   const [config, setConfig] = useState<BYOConfig>(EMPTY);
@@ -27,13 +27,10 @@ export function useBYOConfig() {
           setLoggedIn(true);
           setUserEmail(session.user.email ?? null);
 
-          // DB から Gemini Key を同期（DB優先）
-          const settings = await fetchUserSettings();
-          if (settings?.gemini_api_key) {
-            const synced: BYOConfig = { ...stored, geminiApiKey: settings.gemini_api_key };
-            setBYOConfig(synced);
-            setConfig(synced);
-          }
+          // Health Check: Supabase 無料プランのスリープ防止（非同期、ノーウェイト）
+          performHealthCheck().catch(() => {
+            // サイレント
+          });
         }
       }
 
@@ -57,15 +54,10 @@ export function useBYOConfig() {
     await supabaseSignOut();
     setLoggedIn(false);
     setUserEmail(null);
-    // Gemini Key は localStorage から消去（セキュリティ）
-    const current = getBYOConfig();
-    const next: BYOConfig = { ...current, geminiApiKey: "" };
-    setBYOConfig(next);
-    setConfig(next);
   }, []);
 
   const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
-  const isReady = isConfigured && loggedIn && Boolean(config.geminiApiKey);
+  const isReady = isConfigured && loggedIn;
 
   return { config, save, clear, isConfigured, isReady, loaded, loggedIn, userEmail, logout };
 }

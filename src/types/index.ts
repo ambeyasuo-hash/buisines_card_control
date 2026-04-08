@@ -3,7 +3,6 @@
 export type BYOConfig = {
   supabaseUrl: string;
   supabaseAnonKey: string;
-  geminiApiKey: string;
 };
 
 export type Category = {

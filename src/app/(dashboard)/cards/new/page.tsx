@@ -3,12 +3,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { Camera } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
-import { analyzeBusinessCard, generateThankYouEmailDraft } from "@/lib/gemini";
+import { analyzeBusinessCard } from "@/lib/ocr";
+import { preprocessCardImage } from "@/lib/image";
+import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
+import { toMailtoUrl } from "@/lib/utils";
 import { useSupabase } from "@/hooks/useSupabase";
+import { useEmailDraft } from "@/hooks/useEmailDraft";
+import { Toast } from "@/components/ui/Toast";
 import type { Category } from "@/types";
 
 type FormState = {
@@ -26,12 +30,6 @@ type FormState = {
   category_id: string | null;
   thumbnail_base64?: string;
 };
-
-type EmailDraftState =
-  | { state: "idle" }
-  | { state: "generating" }
-  | { state: "ok"; subject: string; body: string }
-  | { state: "error"; message: string };
 
 function todayISO(): string {
   const d = new Date();
@@ -71,7 +69,6 @@ export default function NewCardPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [emailDraft, setEmailDraft] = useState<EmailDraftState>({ state: "idle" });
   const formFieldsRef = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({});
 
   useEffect(() => {
@@ -82,16 +79,15 @@ export default function NewCardPage() {
     async function loadCategories() {
       if (!client) return;
       try {
-        const { data, error } = await client.from("categories").select("*") as any;
+        const { data, error } = (await client.from("categories").select("*")) as any;
         if (error) throw error;
         const cats = (data || []) as Category[];
         setCategories(cats);
-        // 最初のカテゴリを デフォルト選択
         if (cats && cats.length > 0) {
           setForm((prev) => ({ ...prev, category_id: cats[0].id }));
         }
-      } catch (e) {
-        console.error("Failed to load categories:", e);
+      } catch {
+        // 失敗してもカテゴリなしで続行
       }
     }
     loadCategories();
@@ -110,60 +106,42 @@ export default function NewCardPage() {
 
   const isLoading = status.state === "running";
 
-  const generateEmail = useCallback(async () => {
+  // メール下書き生成 — useEmailDraft フックに委譲
+  const mailGenerator = useCallback(
+    () =>
+      generateThankYouEmailDraft({
+        toName: form.full_name,
+        toCompany: form.company || undefined,
+        notes: form.notes || undefined,
+        exchangedAt: form.exchanged_at || undefined,
+      }),
+    [form.full_name, form.company, form.notes, form.exchanged_at]
+  );
+
+  const { mailStatus, onGenerateMail: _onGenerateMail } = useEmailDraft({
+    emailAddress: form.email,
+    generator: mailGenerator,
+  });
+
+  // 氏名バリデーションを追加したラッパー
+  const onGenerateEmail = useCallback(async () => {
     if (!form.full_name.trim()) {
       setToast("氏名を入力してからメール下書きを生成してください");
       window.setTimeout(() => setToast(null), 2000);
       return;
     }
-    setEmailDraft({ state: "generating" });
-    try {
-      const result = await withTimeout(
-        generateThankYouEmailDraft({
-          toName: form.full_name,
-          toCompany: form.company || undefined,
-          notes: form.notes || undefined,
-          exchangedAt: form.exchanged_at || undefined,
-        }),
-        30_000,
-        "メール生成がタイムアウトしました"
-      );
-      setEmailDraft({ state: "ok", subject: result.subject, body: result.body });
-    } catch (e) {
-      const msg =
-        e instanceof TimeoutError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "メール下書き生成に失敗しました";
-      setEmailDraft({ state: "error", message: msg });
-      setToast(msg);
-      window.setTimeout(() => setToast(null), 2500);
-    }
-  }, [form.full_name, form.company, form.notes, form.exchanged_at]);
-
-  const openEmailClient = useCallback(() => {
-    if (emailDraft.state !== "ok") return;
-    const { subject, body } = emailDraft;
-    const email = form.email;
-    if (!email) {
-      setToast("メールアドレスが必要です");
-      window.setTimeout(() => setToast(null), 1500);
-      return;
-    }
-    const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailtoUrl;
-  }, [emailDraft, form.email]);
+    await _onGenerateMail();
+  }, [form.full_name, _onGenerateMail]);
 
   const run = useCallback(async (f: File) => {
     setStatus({ state: "running" });
     try {
+      const processed = await preprocessCardImage(f);
       const res = await withTimeout(
-        analyzeBusinessCard(f),
-        30_000,
-        "OCR解析がタイムアウトしました（ネットワークをご確認ください）"
+        analyzeBusinessCard(processed),
+        60_000,
+        "OCR解析がタイムアウトしました"
       );
-      // JSON表示は行わず、即フォームへ反映して編集可能にする
       setForm((prev) => ({
         ...prev,
         full_name: res.name ?? "",
@@ -186,14 +164,12 @@ export default function NewCardPage() {
           : e instanceof Error
             ? e.message
             : "OCR解析に失敗しました";
-      // 解析に失敗しても空フォームで手入力できるようにする
       setForm((prev) => ({ ...EMPTY_FORM, exchanged_at: prev.exchanged_at || todayISO() }));
       setStatus({ state: "ng", message: msg });
     }
   }, []);
 
   const inputId = "scan-camera-input";
-
   const showForm = Boolean(file) && status.state !== "running";
 
   async function onSave() {
@@ -233,7 +209,6 @@ export default function NewCardPage() {
         exchanged_at: form.exchanged_at || todayISO(),
       };
 
-      // upsert: id をこちらで払い出し、onConflict=id で確実に 1 行として保存する
       const { error } = (await withTimeout(
         (client.from("business_cards") as any).upsert(payload, { onConflict: "id" }),
         30_000,
@@ -270,7 +245,7 @@ export default function NewCardPage() {
         <div className="flex-1 flex items-center justify-center px-5 py-8">
           <div className="text-center space-y-4">
             <h1 className="text-2xl font-bold mb-2">設定が必要です</h1>
-            <p className="text-sm text-slate-400 mb-4">先に接続設定（Supabase URL / Anon Key / Gemini Key）を完了してください。</p>
+            <p className="text-sm text-slate-400 mb-4">先に接続設定（Supabase URL / Anon Key）を完了してください。</p>
             <a href="/settings" className="inline-flex h-11 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-medium text-white hover:bg-blue-700 transition">
               設定へ
             </a>
@@ -318,7 +293,6 @@ export default function NewCardPage() {
                 const f = e.target.files?.[0] ?? null;
                 setFile(f);
                 setStatus({ state: "idle" });
-                setEmailDraft({ state: "idle" });
                 setForm({ ...EMPTY_FORM, exchanged_at: todayISO(), category_id: categories[0]?.id || null });
                 if (f) {
                   void prefetchGeolocation();
@@ -350,23 +324,20 @@ export default function NewCardPage() {
               {isLoading && (
                 <>
                   <div className="absolute inset-0 bg-slate-950/55" />
-                  {/* スキャンビーム */}
                   <div className="absolute inset-x-0 top-0 bottom-0 overflow-hidden pointer-events-none">
                     <div className="animate-scan-beam relative">
                       <div className="absolute inset-x-0 bottom-3 h-14 bg-gradient-to-b from-transparent via-blue-500/20 to-blue-500/5" />
                       <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_14px_5px_rgba(59,130,246,0.5)]" />
                     </div>
                   </div>
-                  {/* 四隅ブラケット */}
                   <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-blue-400/70 animate-bracket-pulse" />
                   <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-blue-400/70 animate-bracket-pulse" />
                   <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-blue-400/70 animate-bracket-pulse" />
                   <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-blue-400/70 animate-bracket-pulse" />
-                  {/* ラベル */}
                   <div className="absolute inset-x-0 bottom-0 flex justify-center p-3">
                     <div className="flex items-center gap-2 rounded-full bg-slate-950/80 px-4 py-2 backdrop-blur">
                       <div className="h-2 w-2 rounded-full bg-blue-400 pulse-dot" />
-                      <span className="text-xs font-medium text-white/90">AIが名刺を解析中...</span>
+                      <span className="text-xs font-medium text-white/90">ブラウザで名刺を解析中...</span>
                     </div>
                   </div>
                 </>
@@ -397,9 +368,7 @@ export default function NewCardPage() {
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300">氏名（必須）</label>
                   <input
-                    ref={(el) => {
-                      if (el) formFieldsRef.current["full_name"] = el;
-                    }}
+                    ref={(el) => { if (el) formFieldsRef.current["full_name"] = el; }}
                     type="text"
                     value={form.full_name}
                     onChange={(e) => setForm({ ...form, full_name: e.target.value })}
@@ -413,17 +382,13 @@ export default function NewCardPage() {
                     フリガナ
                     {!form.kana && <span className="text-[10px] font-normal text-amber-400/70">要確認</span>}
                   </label>
-                  <div
-                    className={`h-11 rounded-xl border px-3 flex items-center text-sm relative ${
-                      !form.kana
-                        ? "border-amber-500/50 bg-amber-500/5 shadow-[0_0_0_2px_rgba(245,158,11,0.2)]"
-                        : "border-white/15 bg-white/5"
-                    }`}
-                  >
+                  <div className={`h-11 rounded-xl border px-3 flex items-center text-sm relative ${
+                    !form.kana
+                      ? "border-amber-500/50 bg-amber-500/5 shadow-[0_0_0_2px_rgba(245,158,11,0.2)]"
+                      : "border-white/15 bg-white/5"
+                  }`}>
                     <input
-                      ref={(el) => {
-                        if (el) formFieldsRef.current["kana"] = el;
-                      }}
+                      ref={(el) => { if (el) formFieldsRef.current["kana"] = el; }}
                       type="text"
                       value={form.kana}
                       onChange={(e) => setForm({ ...form, kana: e.target.value })}
@@ -439,9 +404,7 @@ export default function NewCardPage() {
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300">会社名</label>
                   <input
-                    ref={(el) => {
-                      if (el) formFieldsRef.current["company"] = el;
-                    }}
+                    ref={(el) => { if (el) formFieldsRef.current["company"] = el; }}
                     type="text"
                     value={form.company}
                     onChange={(e) => setForm({ ...form, company: e.target.value })}
@@ -455,15 +418,11 @@ export default function NewCardPage() {
                     役職
                     {!form.title && <span className="text-[10px] font-normal text-amber-400/70">要確認</span>}
                   </label>
-                  <div
-                    className={`h-11 rounded-xl border px-3 flex items-center text-sm ${
-                      !form.title ? "border-amber-500/35 bg-white/[0.02]" : "border-white/15 bg-white/5"
-                    }`}
-                  >
+                  <div className={`h-11 rounded-xl border px-3 flex items-center text-sm ${
+                    !form.title ? "border-amber-500/35 bg-white/[0.02]" : "border-white/15 bg-white/5"
+                  }`}>
                     <input
-                      ref={(el) => {
-                        if (el) formFieldsRef.current["title"] = el;
-                      }}
+                      ref={(el) => { if (el) formFieldsRef.current["title"] = el; }}
                       type="text"
                       value={form.title}
                       onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -476,9 +435,7 @@ export default function NewCardPage() {
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs font-semibold text-slate-300">メールアドレス</label>
                   <input
-                    ref={(el) => {
-                      if (el) formFieldsRef.current["email"] = el;
-                    }}
+                    ref={(el) => { if (el) formFieldsRef.current["email"] = el; }}
                     type="email"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -492,15 +449,11 @@ export default function NewCardPage() {
                     電話番号
                     {!form.phone && <span className="text-[10px] font-normal text-amber-400/70">要確認</span>}
                   </label>
-                  <div
-                    className={`h-11 rounded-xl border px-3 flex items-center text-sm ${
-                      !form.phone ? "border-amber-500/35 bg-white/[0.02]" : "border-white/15 bg-white/5"
-                    }`}
-                  >
+                  <div className={`h-11 rounded-xl border px-3 flex items-center text-sm ${
+                    !form.phone ? "border-amber-500/35 bg-white/[0.02]" : "border-white/15 bg-white/5"
+                  }`}>
                     <input
-                      ref={(el) => {
-                        if (el) formFieldsRef.current["phone"] = el;
-                      }}
+                      ref={(el) => { if (el) formFieldsRef.current["phone"] = el; }}
                       type="tel"
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -514,9 +467,7 @@ export default function NewCardPage() {
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300">交換日</label>
                   <input
-                    ref={(el) => {
-                      if (el) formFieldsRef.current["exchanged_at"] = el;
-                    }}
+                    ref={(el) => { if (el) formFieldsRef.current["exchanged_at"] = el; }}
                     type="date"
                     value={form.exchanged_at}
                     onChange={(e) => setForm({ ...form, exchanged_at: e.target.value })}
@@ -528,9 +479,7 @@ export default function NewCardPage() {
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs font-semibold text-slate-300">メモ</label>
                   <textarea
-                    ref={(el) => {
-                      if (el) formFieldsRef.current["notes"] = el;
-                    }}
+                    ref={(el) => { if (el) formFieldsRef.current["notes"] = el; }}
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
                     className="min-h-16 w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white placeholder-slate-500 resize-none"
@@ -568,10 +517,10 @@ export default function NewCardPage() {
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
               <div className="font-bold text-sm text-white">📧 お礼メール下書き</div>
 
-              {emailDraft.state === "idle" && (
+              {mailStatus.state === "idle" && (
                 <button
                   type="button"
-                  onClick={generateEmail}
+                  onClick={onGenerateEmail}
                   disabled={!form.full_name.trim()}
                   className="w-full h-11 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm transition"
                 >
@@ -579,7 +528,7 @@ export default function NewCardPage() {
                 </button>
               )}
 
-              {emailDraft.state === "generating" && (
+              {mailStatus.state === "running" && (
                 <div className="flex items-center justify-center h-11 rounded-full bg-blue-600/20 border border-blue-500/30">
                   <svg className="h-4 w-4 text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="10" strokeWidth={2} className="opacity-25" />
@@ -589,21 +538,32 @@ export default function NewCardPage() {
                 </div>
               )}
 
-              {emailDraft.state === "ok" && (
+              {mailStatus.state === "ok" && (
                 <div className="space-y-3 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
                   <div>
                     <div className="text-xs text-slate-400 mb-1">【件名】</div>
-                    <div className="text-sm text-white break-words">{emailDraft.subject}</div>
+                    <div className="text-sm text-white break-words">{mailStatus.subject}</div>
                   </div>
                   <div>
                     <div className="text-xs text-slate-400 mb-1">【本文】</div>
                     <div className="text-sm text-slate-300 whitespace-pre-wrap break-words max-h-24 overflow-y-auto">
-                      {emailDraft.body}
+                      {mailStatus.body}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={openEmailClient}
+                    onClick={() => {
+                      if (!form.email) {
+                        setToast("メールアドレスが必要です");
+                        window.setTimeout(() => setToast(null), 1500);
+                        return;
+                      }
+                      window.location.href = toMailtoUrl({
+                        to: form.email,
+                        subject: mailStatus.subject,
+                        body: mailStatus.body,
+                      });
+                    }}
                     disabled={!form.email}
                     className="w-full h-10 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm flex items-center justify-center gap-2 transition"
                   >
@@ -616,8 +576,8 @@ export default function NewCardPage() {
                 </div>
               )}
 
-              {emailDraft.state === "error" && (
-                <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">{emailDraft.message}</div>
+              {mailStatus.state === "ng" && (
+                <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">{mailStatus.message}</div>
               )}
             </div>
           </>
@@ -633,7 +593,6 @@ export default function NewCardPage() {
               onClick={() => {
                 setFile(null);
                 setStatus({ state: "idle" });
-                setEmailDraft({ state: "idle" });
                 setForm({ ...EMPTY_FORM, exchanged_at: todayISO(), category_id: categories[0]?.id || null });
               }}
               className="h-14 rounded-full bg-white text-slate-950 font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-100 transition"
@@ -658,13 +617,8 @@ export default function NewCardPage() {
         </div>
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-40 rounded-full border border-white/20 bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
-          {toast}
-        </div>
-      )}
+      {/* Toast — ボトムバーの上に表示 */}
+      <Toast message={toast} className="bottom-24" />
     </div>
   );
 }
-

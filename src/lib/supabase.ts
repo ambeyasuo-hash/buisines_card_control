@@ -2,7 +2,7 @@
 
 import { createClient, SupabaseClient, Session } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { getBYOConfig, setBYOConfig } from "@/lib/utils";
+import { getBYOConfig } from "@/lib/utils";
 
 let cachedClient: SupabaseClient<Database> | null = null;
 let cachedFingerprint: string | null = null;
@@ -145,26 +145,9 @@ export async function fetchUserSettings(): Promise<
 }
 
 /**
- * ログイン成功後に呼び出す: user_settings から Gemini API Key を取得し
- * localStorage の BYO_CONFIG へ自動展開する。
- * @returns 取得した gemini_api_key（設定がなければ空文字）
- */
-export async function syncUserSettingsToLocal(): Promise<string> {
-  const settings = await fetchUserSettings();
-  const geminiApiKey = settings?.gemini_api_key ?? "";
-  // 「ログイン一発で整う」ため、DBの値を優先して localStorage に反映する
-  if (geminiApiKey) {
-    const current = getBYOConfig();
-    if (current.geminiApiKey !== geminiApiKey) setBYOConfig({ ...current, geminiApiKey });
-  }
-  return geminiApiKey;
-}
-
-/**
  * user_settings を upsert する（ログイン後の設定保存に使用）。
  */
 export async function upsertUserSettings(input: {
-  geminiApiKey?: string;
   userDisplayName?: string;
   userOrganization?: string;
 }): Promise<void> {
@@ -178,7 +161,6 @@ export async function upsertUserSettings(input: {
   const { error } = await (client.from("user_settings") as any).upsert(
     {
       user_id: user.id,
-      ...(input.geminiApiKey !== undefined ? { gemini_api_key: input.geminiApiKey } : {}),
       ...(input.userDisplayName !== undefined ? { user_display_name: input.userDisplayName } : {}),
       ...(input.userOrganization !== undefined ? { user_organization: input.userOrganization } : {}),
     },
@@ -188,7 +170,24 @@ export async function upsertUserSettings(input: {
   if (error) throw new Error(error.message);
 }
 
-// 互換: 旧シグネチャ（geminiApiKey 文字列）を残す
-export async function upsertUserSettingsGeminiKey(geminiApiKey: string): Promise<void> {
-  return await upsertUserSettings({ geminiApiKey });
+// ---------------------------------------------------------------------------
+// Health Check (Cold Start Prevention)
+// ---------------------------------------------------------------------------
+
+/**
+ * Supabase 無料プランのスリープを防ぐため、定期的なヘルスチェックを実行する。
+ * 単純な SELECT 1 クエリを実行し、DB接続を保つ。
+ * エラーはサイレント（ロギングのみ、UIへの通知なし）。
+ */
+export async function performHealthCheck(): Promise<void> {
+  const client = getDynamicSupabase();
+  if (!client) return; // 未設定の場合はスキップ
+
+  try {
+    // 軽量クエリで接続確認
+    await client.from("business_cards").select("id").limit(1);
+  } catch (err) {
+    // サイレント: エラーはコンソールのみ
+    console.debug("[Health Check]", err instanceof Error ? err.message : String(err));
+  }
 }
