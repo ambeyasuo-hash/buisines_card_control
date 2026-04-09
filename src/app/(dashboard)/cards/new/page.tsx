@@ -112,7 +112,7 @@ export default function NewCardPage() {
 
   // メール下書き生成 — useEmailDraft フックに委譲
   const mailGenerator = useCallback(
-    () =>
+    async () =>
       generateThankYouEmailDraft({
         toName: form.full_name,
         toCompany: form.company || undefined,

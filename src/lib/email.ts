@@ -48,28 +48,37 @@ ${company}ご活躍をお祈りしております。
 export function generateFollowUpEmail(options: {
   toName: string;
   toCompany?: string;
-  subject?: string;
-  context?: string;
+  toDepartment?: string;
+  toTitle?: string;
+  notes?: string;
+  exchangedAt?: string;
+  locationName?: string;
+  userDisplayName?: string;
+  userOrganization?: string;
+  emailTone?: string;
+  categoryFooter?: string;
 }): { subject: string; body: string } {
   const name = options.toName || "交換相手";
   const company = options.toCompany ? `${options.toCompany}の` : "";
-  const emailSubject = options.subject || "お疲れさまです";
-  const context = options.context || "先日はお疲れさまでした。";
+  const department = options.toDepartment ? `${options.toDepartment}` : "";
+  const title = options.toTitle ? `${options.toTitle}` : "";
 
-  const subject = emailSubject;
+  const subject = `${name}${title ? ` (${title})` : ""}様へのご連絡`;
 
-  const body = `${name}様
+  const body = `${name}${title ? `（${title}）` : ""}様
 
-${context}
+いつもお世話になっております。
 
-${company}のご状況をお伺いしたく、ご連絡させていただきました。
+先日は名刺交換の機会をいただきありがとうございました。
+${company}${department}のご活躍をお祈りしております。
 
 何かお力になれることがあれば、
 お気軽にお知らせください。
 
 引き続き、よろしくお願いいたします。
 
----
+${options.userDisplayName ? `---\n${options.userDisplayName}` : ""}
+${options.userOrganization ? `${options.userOrganization}\n` : ""}
 本メールは名刺管理アプリケーションから自動生成されました。`;
 
   return { subject, body };
