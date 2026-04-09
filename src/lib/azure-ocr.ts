@@ -9,6 +9,22 @@ import type { AzureBusinessCardResult, BusinessCardData } from "@/types/business
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
+// Dynamic import for server-side image processing
+let sharpAvailable = false;
+let sharp: any = null;
+
+async function getSharp() {
+  if (sharpAvailable === false && sharp === null) {
+    try {
+      sharp = (await import("sharp")).default;
+      sharpAvailable = true;
+    } catch (e) {
+      sharpAvailable = false;
+    }
+  }
+  return sharp;
+}
+
 /**
  * Initialize Azure Form Recognizer client
  * Endpoint and Key from environment variables (never exposed to frontend)
@@ -226,51 +242,76 @@ function extractUrlFromText(text: string): string {
 }
 
 /**
- * Generate 100px thumbnail from image file
- * Base64 encoding for storage in Supabase
+ * DEPRECATED: Browser-based thumbnail generation
+ * Use generateThumbnailFromBase64() instead for server-side processing
  *
- * @param imageFile - Original image file from user
- * @returns Base64 encoded thumbnail (100px width)
+ * @deprecated Use generateThumbnailFromBase64() for server-side execution
  */
 export async function generateThumbnail(imageFile: File): Promise<string> {
+  // Browser version - no longer used in Server Actions
+  // Kept for backward compatibility only
+  console.warn(
+    "generateThumbnail() is deprecated. Use generateThumbnailFromBase64() instead."
+  );
+  return "";
+}
+
+/**
+ * Generate 100px thumbnail from Base64 image data
+ * Server-side processing using Sharp (if available) or fallback
+ *
+ * Specification: Maintain aspect ratio at 100px width, PNG format, Base64 encoded
+ * Used for privacy-preserving UI preview only.
+ *
+ * @param base64ImageUrl - Data URL image (e.g., "data:image/jpeg;base64,...")
+ * @returns Base64 encoded thumbnail (100px width) or empty string on error
+ */
+export async function generateThumbnailFromBase64(
+  base64ImageUrl: string
+): Promise<string> {
   try {
-    const bitmap = await createImageBitmap(imageFile);
-    const canvas = document.createElement("canvas");
+    // Extract base64 data from data URL
+    if (!base64ImageUrl.startsWith("data:image/")) {
+      throw new Error("Invalid image data URL format");
+    }
 
-    // Calculate dimensions to maintain aspect ratio at 100px width
-    const width = 100;
-    const height = Math.round((bitmap.height / bitmap.width) * width);
+    const base64Data = base64ImageUrl.split(",")[1];
+    if (!base64Data) {
+      throw new Error("Could not extract base64 data from image URL");
+    }
 
-    canvas.width = width;
-    canvas.height = height;
+    // Convert Base64 to Buffer
+    const imageBuffer = Buffer.from(base64Data, "base64");
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Failed to get canvas context");
+    // Try to use Sharp for server-side processing
+    const sharpLib = await getSharp();
 
-    ctx.drawImage(bitmap, 0, 0, width, height);
+    if (sharpLib) {
+      try {
+        // Use Sharp to resize to 100px width, maintaining aspect ratio
+        const thumbnailBuffer = await sharpLib(imageBuffer)
+          .resize(100, undefined, {
+            withoutEnlargement: true, // Don't upscale
+            fit: "inside", // Maintain aspect ratio
+          })
+          .png({ quality: 80 }) // PNG format, 80% quality
+          .toBuffer();
 
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error("Failed to create blob"));
-            return;
-          }
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = reader.result as string;
-            resolve(base64);
-          };
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        },
-        "image/png",
-        0.8
-      );
-    });
+        // Convert thumbnail buffer back to Base64
+        const base64Thumbnail = thumbnailBuffer.toString("base64");
+        return `data:image/png;base64,${base64Thumbnail}`;
+      } catch (sharpError) {
+        console.warn("Sharp processing failed, trying fallback:", sharpError);
+        // Fall through to fallback
+      }
+    }
+
+    // Fallback: Return empty string
+    // (Full fallback would require additional libraries)
+    console.warn("No image processing library available for thumbnail generation");
+    return "";
   } catch (error) {
     console.error("Thumbnail generation error:", error);
-    // Return empty thumbnail on error; UI will handle gracefully
     return "";
   }
 }
@@ -337,34 +378,37 @@ export async function saveBusinessCardToSupabase(
 }
 
 /**
- * Complete OCR analysis pipeline: Azure API → Normalize → Save to Supabase
+ * Complete OCR analysis pipeline: Azure API → Normalize → Thumbnail → Save to Supabase
  * Server-side function for security (Azure credentials + RLS protection)
  *
- * @param imageUrl - Public URL of business card image (or base64)
+ * Zero-Knowledge Guarantee:
+ * - Image is sent ONLY to Azure (deleted within 24h)
+ * - 100px thumbnail generated for UI preview only
+ * - Extracted data immediately stored in Supabase with RLS protection
+ *
+ * @param imageUrl - Base64 data URL of business card image
  * @param supabase - Supabase client
  * @param userId - Current user ID
- * @param imageFile - Original file for thumbnail (optional)
  * @returns Saved business card data
  */
 export async function analyzeAndSaveBusinessCard(
   imageUrl: string,
   supabase: SupabaseClient<Database>,
-  userId: string,
-  imageFile?: File
+  userId: string
 ): Promise<BusinessCardData & { id: string }> {
-  // Step 1: Analyze with Azure
+  // Step 1: Analyze with Azure (image deleted within 24h by Azure)
   const azureResult = await analyzeBusinessCardWithAzure(imageUrl);
 
   // Step 2: Normalize to BusinessCardData format
   let normalized = normalizeAzureResult(azureResult, userId);
 
-  // Step 3: Generate thumbnail if image file provided
-  if (imageFile) {
-    try {
-      normalized.thumbnail_base64 = await generateThumbnail(imageFile);
-    } catch (error) {
-      console.warn("Thumbnail generation failed, continuing without:", error);
-    }
+  // Step 3: Generate 100px thumbnail from Base64 image
+  // (Original image stays only as Base64 in memory, never persisted)
+  try {
+    normalized.thumbnail_base64 = await generateThumbnailFromBase64(imageUrl);
+  } catch (error) {
+    console.warn("Thumbnail generation failed, continuing without:", error);
+    normalized.thumbnail_base64 = null;
   }
 
   // Step 4: Save to Supabase (RLS protection via user_id)

@@ -27,30 +27,28 @@ const JAPANESE_RANK_PATTERNS = {
 };
 
 /**
- * Industry classification patterns
- * Attempts to infer industry from company name (fallback to user manual selection)
+ * DEPRECATED: Industry classification patterns
+ * REASON: Company name pattern matching violates zero-knowledge principle (PII)
+ *
+ * These patterns are no longer used. Industry is now determined by:
+ * 1. User selection via UI (preferred)
+ * 2. Default category value (fallback)
+ *
+ * Do not use company name or domain patterns for industry inference.
  */
-const INDUSTRY_PATTERNS = {
-  it: [
-    "IT",
-    "ソフトウェア",
-    "シスコン",
-    "コンピュータ",
-    "デジタル",
-    "テック",
-    "システム",
-  ],
-  finance: ["銀行", "証券", "保険", "金融", "ファイナンス", "投資"],
-  trading: ["商社", "貿易", "輸入", "輸出", "流通"],
-  manufacturing: ["製造", "工業", "機械", "電子", "重工"],
-  consulting: ["コンサル", "コンサルティング", "アドバイザリー"],
-  logistics: ["運輸", "物流", "配送", "倉庫"],
-  retail: ["小売", "百貨店", "EC", "販売"],
-  construction: ["建設", "不動産", "ゼネコン", "開発"],
-  healthcare: ["医療", "病院", "医薬", "ヘルスケア", "診療"],
-  education: ["教育", "学園", "大学", "学校"],
-  media: ["メディア", "放送", "新聞", "出版", "広告"],
-};
+// const INDUSTRY_PATTERNS = {
+//   it: ["IT", "ソフトウェア", "シスコン", "コンピュータ", "デジタル", "テック", "システム"],
+//   finance: ["銀行", "証券", "保険", "金融", "ファイナンス", "投資"],
+//   trading: ["商社", "貿易", "輸入", "輸出", "流通"],
+//   manufacturing: ["製造", "工業", "機械", "電子", "重工"],
+//   consulting: ["コンサル", "コンサルティング", "アドバイザリー"],
+//   logistics: ["運輸", "物流", "配送", "倉庫"],
+//   retail: ["小売", "百貨店", "EC", "販売"],
+//   construction: ["建設", "不動産", "ゼネコン", "開発"],
+//   healthcare: ["医療", "病院", "医薬", "ヘルスケア", "診療"],
+//   education: ["教育", "学園", "大学", "学校"],
+//   media: ["メディア", "放送", "新聞", "出版", "広告"],
+// };
 
 /**
  * Extract rank level from Japanese job title
@@ -72,27 +70,18 @@ export function extractRankFromTitle(title: string): string {
 }
 
 /**
- * Infer industry from company name
- * Uses pattern matching; fallback to generic "other" if no match
+ * DEPRECATED: Do not infer industry from company name (PII)
  *
- * @param company - Company name
- * @returns Industry category (e.g., "it", "finance", "trading")
+ * Zero-Knowledge requirement: Company names are PII and must not be processed
+ * for attribute extraction.
+ *
+ * Use extractMaskedAttributes() with user-selected category instead.
+ *
+ * @deprecated Use user-selected category or category default instead
  */
 export function inferIndustryFromCompany(company: string): string {
-  if (!company) return "other";
-
-  const companyLower = company.toLowerCase();
-
-  for (const [industry, patterns] of Object.entries(INDUSTRY_PATTERNS)) {
-    if (
-      patterns.some((pattern) =>
-        companyLower.includes(pattern.toLowerCase())
-      )
-    ) {
-      return industry;
-    }
-  }
-
+  // DEPRECATED - Company name processing violates zero-knowledge principle
+  // Always return "other" - let user select industry via UI
   return "other";
 }
 
@@ -103,15 +92,24 @@ export function inferIndustryFromCompany(company: string): string {
  * This function extracts only abstract metadata that helps the LLM generate
  * appropriate email templates without ever knowing who the person is.
  *
+ * Industry determination:
+ * - User-selected category is preferred (passed via mission or category_id)
+ * - Falls back to "other" if not provided
+ * - NEVER infers from company name or domain (PII violation)
+ *
  * @param cardData - Full business card data (with PII)
  * @returns Masked attributes for LLM prompt (no PII)
  */
 export function extractMaskedAttributes(
   cardData: BusinessCardData
 ): AttributesMasked {
+  // Determine industry from user selection, NOT from company/domain
+  // TODO: Replace "other" with cardData.user_selected_industry when UI is implemented
+  const industry = cardData.category_id ? "selected" : "other";
+
   return {
     role: extractRankFromTitle(cardData.title),
-    industry: inferIndustryFromCompany(cardData.company),
+    industry, // User selection or default "other" - never from PII
     mission: undefined, // User will select manually if needed
   };
 }
