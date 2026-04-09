@@ -5,15 +5,13 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
-import { analyzeBusinessCard } from "@/lib/ocr";
-import { preprocessCardImage } from "@/lib/imageProcessor";
 import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
 import { toMailtoUrl } from "@/lib/utils";
 import { useSupabase } from "@/hooks/useSupabase";
 import { useEmailDraft } from "@/hooks/useEmailDraft";
-import { useWASMInit } from "@/hooks/useWASMInit";
 import { Toast } from "@/components/ui/Toast";
+import { analyzeBusinessCardAction } from "@/app/actions/ocr";
 import type { Category } from "@/types";
 import type { OCRStatus } from "@/types/business-card";
 
@@ -30,7 +28,7 @@ type FormState = {
   notes: string;
   exchanged_at: string;
   category_id: string | null;
-  thumbnail_base64?: string;
+  thumbnail_base64?: string | null;
 };
 
 function todayISO(): string {
@@ -59,7 +57,7 @@ const EMPTY_FORM: FormState = {
 export default function NewCardPage() {
   const router = useRouter();
   const { client, isConfigured } = useSupabase();
-  const { status: wasmStatus, isReady: isWasmReady } = useWASMInit();
+  // Azure OCR runs server-side via Server Actions, no client-side WASM initialization needed
 
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<
@@ -107,12 +105,12 @@ export default function NewCardPage() {
     };
   }, [previewUrl]);
 
-  // Combined loading state: OCR processing OR WASM initialization
-  const isLoading = status.state === "running" || wasmStatus.state === "initializing";
+  // Azure OCR is server-side only, no client-side WASM initialization needed
+  const isLoading = status.state === "running";
 
   // メール下書き生成 — useEmailDraft フックに委譲
   const mailGenerator = useCallback(
-    () =>
+    async () =>
       generateThankYouEmailDraft({
         toName: form.full_name,
         toCompany: form.company || undefined,
@@ -140,27 +138,87 @@ export default function NewCardPage() {
   const run = useCallback(async (f: File) => {
     setStatus({ state: "running" });
     try {
-      const processed = await preprocessCardImage(f);
-      const res = await withTimeout(
-        analyzeBusinessCard(processed),
-        60_000,
-        "OCR解析がタイムアウトしました"
-      );
-      setForm((prev) => ({
-        ...prev,
-        full_name: res.name ?? "",
-        kana: res.name_kana ?? "",
-        company: res.company ?? "",
-        department: res.department ?? "",
-        title: res.title ?? "",
-        email: res.email ?? "",
-        phone: (res.mobile ?? res.phone ?? "") ?? "",
-        address: res.address ?? "",
-        url: res.website ?? "",
-        notes: res.notes ?? "",
-        thumbnail_base64: res.thumbnail_base64,
-      }));
-      setStatus({ state: "ok" });
+      // Step 1: Convert image to Base64 for Azure API
+      const reader = new FileReader();
+
+      return new Promise<void>((resolve, reject) => {
+        reader.onload = async () => {
+          try {
+            const base64 = reader.result as string;
+
+            // Step 2: Get user session for authentication
+            if (!client) {
+              throw new Error("Supabase接続が未設定です");
+            }
+
+            const { data: sessionData } = await client.auth.getSession();
+            const accessToken = sessionData?.session?.access_token;
+
+            if (!accessToken) {
+              throw new Error("ログインセッションが有効ではありません");
+            }
+
+            // Step 3: Call Server Action (Azure OCR + Supabase Save)
+            const result = await withTimeout(
+              analyzeBusinessCardAction(base64, accessToken),
+              60_000,
+              "OCR解析がタイムアウトしました"
+            );
+
+            if (!result.success) {
+              throw new Error(result.error || "解析に失敗しました");
+            }
+
+            if (!result.data) {
+              throw new Error("データ取得に失敗しました");
+            }
+
+            // Step 4: Populate form with extracted data (Azure response + Supabase saved)
+            setForm((prev) => ({
+              ...prev,
+              full_name: result.data!.full_name ?? "",
+              kana: result.data!.kana ?? "",
+              company: result.data!.company ?? "",
+              department: result.data!.department ?? "",
+              title: result.data!.title ?? "",
+              email: result.data!.email ?? "",
+              phone: result.data!.phone ?? "",
+              address: result.data!.address ?? "",
+              url: result.data!.url ?? "",
+              notes: result.data!.notes ?? "",
+              thumbnail_base64: result.data!.thumbnail_base64,
+              exchanged_at: result.data!.exchanged_at ?? todayISO(),
+            }));
+
+            setStatus({ state: "ok" });
+            resolve();
+          } catch (e) {
+            const msg =
+              e instanceof TimeoutError
+                ? e.message
+                : e instanceof Error
+                  ? e.message
+                  : "OCR解析に失敗しました";
+            setForm((prev) => ({
+              ...EMPTY_FORM,
+              exchanged_at: prev.exchanged_at || todayISO(),
+            }));
+            setStatus({ state: "ng", message: msg });
+            reject(e);
+          }
+        };
+
+        reader.onerror = () => {
+          const msg = "画像の読み込みに失敗しました";
+          setStatus({ state: "ng", message: msg });
+          reject(new Error(msg));
+        };
+
+        // Read file as Data URL (Base64)
+        reader.readAsDataURL(f);
+      }).catch(() => {
+        // Error already handled above
+      });
     } catch (e) {
       const msg =
         e instanceof TimeoutError
@@ -168,7 +226,10 @@ export default function NewCardPage() {
           : e instanceof Error
             ? e.message
             : "OCR解析に失敗しました";
-      setForm((prev) => ({ ...EMPTY_FORM, exchanged_at: prev.exchanged_at || todayISO() }));
+      setForm((prev) => ({
+        ...EMPTY_FORM,
+        exchanged_at: prev.exchanged_at || todayISO(),
+      }));
       setStatus({ state: "ng", message: msg });
     }
   }, []);
@@ -277,19 +338,13 @@ export default function NewCardPage() {
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="text-xs font-semibold text-slate-400 mb-3">写真を撮ってOCR</div>
             <label htmlFor={inputId} className="block">
-              <div className={`grid place-items-center py-4 rounded-xl transition cursor-pointer ${
-                isWasmReady
-                  ? "bg-blue-600 hover:bg-blue-700"
-                  : "bg-blue-600/40 opacity-50 cursor-not-allowed"
-              }`}>
+              <div className="grid place-items-center py-4 rounded-xl transition cursor-pointer bg-blue-600 hover:bg-blue-700">
                 <div className="flex flex-col items-center gap-2">
                   <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span className="text-sm font-bold text-white">
-                    {isWasmReady ? "写真を撮る" : "初期化中..."}
-                  </span>
+                  <span className="text-sm font-bold text-white">写真を撮る</span>
                 </div>
               </div>
             </label>
@@ -299,7 +354,6 @@ export default function NewCardPage() {
               accept="image/*"
               capture="environment"
               className="sr-only"
-              disabled={!isWasmReady}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 setFile(f);
@@ -645,15 +699,9 @@ export default function NewCardPage() {
         </div>
       )}
 
-      {/* Toast — WASM status or user messages (WASM messages take priority) */}
+      {/* Toast — User messages (WASM initialization no longer needed with Azure OCR) */}
       <Toast
-        message={
-          wasmStatus.state === "initializing"
-            ? "初期化中: WASM ライブラリをロード中..."
-            : wasmStatus.state === "error"
-            ? `エラー: ${wasmStatus.message}`
-            : toast
-        }
+        message={toast}
         className="bottom-24"
       />
     </div>

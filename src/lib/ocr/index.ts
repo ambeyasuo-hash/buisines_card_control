@@ -1,13 +1,13 @@
 // (c) 2026 ambe / Business_Card_Folder
-// Public API for the OCR subsystem.
-// All image analysis runs locally in the browser via Tesseract.js.
-// No image data is transmitted to any external service.
+// DEPRECATED: Client-side OCR subsystem
+//
+// This module has been deprecated in favor of server-side Azure AI Document Intelligence.
+// All business card analysis now runs server-side via analyzeAndSaveBusinessCard() in src/lib/azure-ocr.ts
+// which provides zero-knowledge guarantee with image deletion within 24h.
+//
+// Legacy browser-based Tesseract.js implementation has been removed.
 
 import type { CardOCRResult } from "@/types";
-import { getOCRWorker } from "./engine";
-import { parseBusinessCardText } from "./parser";
-
-export { terminateOCRWorker } from "./engine";
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -48,37 +48,15 @@ async function createThumbnailDataUrl(
 // ─── public API ────────────────────────────────────────────────────────────
 
 /**
- * Analyse a business card image entirely within the browser.
- * Extracts structured fields via Tesseract.js + regex parser.
- * The Worker singleton is reused across calls to avoid memory leaks.
+ * DEPRECATED: analyzeBusinessCard
  *
- * @throws if called outside a browser context
+ * This function is no longer supported. Use analyzeAndSaveBusinessCard() from src/lib/azure-ocr.ts instead.
+ *
+ * @deprecated Use analyzeAndSaveBusinessCard() for zero-knowledge Azure OCR with Supabase storage
+ * @throws Always throws error indicating deprecation
  */
 export async function analyzeBusinessCard(imageFile: File): Promise<CardOCRResult> {
-  if (typeof window === "undefined") {
-    throw new Error("analyzeBusinessCard はクライアントサイドでのみ実行できます");
-  }
-
-  const worker = await getOCRWorker();
-  const [result, thumbnail] = await Promise.all([
-    worker.recognize(imageFile),
-    createThumbnailDataUrl(imageFile, 100),
-  ]);
-
-  const parsed = parseBusinessCardText(result.data.text);
-
-  return {
-    name: parsed.name ?? null,
-    name_kana: null,
-    company: parsed.company ?? null,
-    department: null,
-    title: parsed.title ?? null,
-    email: parsed.email ?? null,
-    phone: parsed.phone ?? null,
-    mobile: parsed.mobile ?? null,
-    address: parsed.address ?? null,
-    website: parsed.website ?? null,
-    notes: null,
-    thumbnail_base64: thumbnail ?? undefined,
-  };
+  throw new Error(
+    "analyzeBusinessCard は廃止されました。src/lib/azure-ocr.ts の analyzeAndSaveBusinessCard() を使用してください。"
+  );
 }

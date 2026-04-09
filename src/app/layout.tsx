@@ -36,15 +36,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* WASM Libraries: Tesseract.js for OCR, OpenCV.js for image processing */}
-        <script
-          src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
-          async
-        />
-        <script
-          src="https://docs.opencv.org/4.5.0/opencv.js"
-          async
-        />
+        {/* All OCR and image processing is server-side (Azure AI Document Intelligence) */}
+        {/* No client-side WASM libraries needed */}
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Header />

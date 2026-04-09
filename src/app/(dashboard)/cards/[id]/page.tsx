@@ -165,7 +165,7 @@ export default function CardDetailPage() {
   const canEdit = useMemo(() => Boolean(edit), [edit]);
 
   // メール下書き生成 — useEmailDraft フックに委譲
-  const mailGenerator = useCallback(() => {
+  const mailGenerator = useCallback(async () => {
     if (!edit) return Promise.reject(new Error("データが読み込まれていません"));
     return generateFollowUpEmail({
       toName: edit.full_name,
