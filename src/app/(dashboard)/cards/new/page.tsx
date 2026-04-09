@@ -15,6 +15,7 @@ import { useEmailDraft } from "@/hooks/useEmailDraft";
 import { useWASMInit } from "@/hooks/useWASMInit";
 import { Toast } from "@/components/ui/Toast";
 import type { Category } from "@/types";
+import type { OCRStatus } from "@/types/business-card";
 
 type FormState = {
   full_name: string;
@@ -344,10 +345,27 @@ export default function NewCardPage() {
                   <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-blue-400/70 animate-bracket-pulse" />
                   <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-blue-400/70 animate-bracket-pulse" />
                   <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-blue-400/70 animate-bracket-pulse" />
-                  <div className="absolute inset-x-0 bottom-0 flex justify-center p-3">
-                    <div className="flex items-center gap-2 rounded-full bg-slate-950/80 px-4 py-2 backdrop-blur">
+                  <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 p-3">
+                    {/* Loading animation + message */}
+                    <div className="flex items-center gap-2 rounded-full bg-slate-950/90 px-4 py-2 backdrop-blur border border-blue-500/20">
                       <div className="h-2 w-2 rounded-full bg-blue-400 pulse-dot" />
-                      <span className="text-xs font-medium text-white/90">ブラウザで名刺を解析中...</span>
+                      <span className="text-xs font-medium text-white/90">セキュリティを確保しながら解析中...</span>
+                    </div>
+
+                    {/* Security info skeleton */}
+                    <div className="text-xs text-slate-400 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <svg className="h-3 w-3 text-emerald-400/60" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        <span>Azure でプライバシー安全に OCR</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <svg className="h-3 w-3 text-emerald-400/60" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        <span>個人情報は日本国内に保護</span>
+                      </div>
                     </div>
                   </div>
                 </>
