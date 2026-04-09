@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { prefetchGeolocation } from "@/lib/geolocation";
-import { analyzeBusinessCard } from "@/lib/ocr";
 import { preprocessCardImage } from "@/lib/imageProcessor";
 import { generateThankYouEmailDraft } from "@/lib/email";
 import { TimeoutError, withTimeout } from "@/lib/async";
@@ -14,6 +13,7 @@ import { useSupabase } from "@/hooks/useSupabase";
 import { useEmailDraft } from "@/hooks/useEmailDraft";
 import { useWASMInit } from "@/hooks/useWASMInit";
 import { Toast } from "@/components/ui/Toast";
+import { analyzeBusinessCardAction } from "@/app/actions/ocr";
 import type { Category } from "@/types";
 import type { OCRStatus } from "@/types/business-card";
 
@@ -30,7 +30,7 @@ type FormState = {
   notes: string;
   exchanged_at: string;
   category_id: string | null;
-  thumbnail_base64?: string;
+  thumbnail_base64?: string | null;
 };
 
 function todayISO(): string {
@@ -140,27 +140,87 @@ export default function NewCardPage() {
   const run = useCallback(async (f: File) => {
     setStatus({ state: "running" });
     try {
-      const processed = await preprocessCardImage(f);
-      const res = await withTimeout(
-        analyzeBusinessCard(processed),
-        60_000,
-        "OCR解析がタイムアウトしました"
-      );
-      setForm((prev) => ({
-        ...prev,
-        full_name: res.name ?? "",
-        kana: res.name_kana ?? "",
-        company: res.company ?? "",
-        department: res.department ?? "",
-        title: res.title ?? "",
-        email: res.email ?? "",
-        phone: (res.mobile ?? res.phone ?? "") ?? "",
-        address: res.address ?? "",
-        url: res.website ?? "",
-        notes: res.notes ?? "",
-        thumbnail_base64: res.thumbnail_base64,
-      }));
-      setStatus({ state: "ok" });
+      // Step 1: Convert image to Base64 for Azure API
+      const reader = new FileReader();
+
+      return new Promise<void>((resolve, reject) => {
+        reader.onload = async () => {
+          try {
+            const base64 = reader.result as string;
+
+            // Step 2: Get user session for authentication
+            if (!client) {
+              throw new Error("Supabase接続が未設定です");
+            }
+
+            const { data: sessionData } = await client.auth.getSession();
+            const accessToken = sessionData?.session?.access_token;
+
+            if (!accessToken) {
+              throw new Error("ログインセッションが有効ではありません");
+            }
+
+            // Step 3: Call Server Action (Azure OCR + Supabase Save)
+            const result = await withTimeout(
+              analyzeBusinessCardAction(base64, accessToken),
+              60_000,
+              "OCR解析がタイムアウトしました"
+            );
+
+            if (!result.success) {
+              throw new Error(result.error || "解析に失敗しました");
+            }
+
+            if (!result.data) {
+              throw new Error("データ取得に失敗しました");
+            }
+
+            // Step 4: Populate form with extracted data (Azure response + Supabase saved)
+            setForm((prev) => ({
+              ...prev,
+              full_name: result.data!.full_name ?? "",
+              kana: result.data!.kana ?? "",
+              company: result.data!.company ?? "",
+              department: result.data!.department ?? "",
+              title: result.data!.title ?? "",
+              email: result.data!.email ?? "",
+              phone: result.data!.phone ?? "",
+              address: result.data!.address ?? "",
+              url: result.data!.url ?? "",
+              notes: result.data!.notes ?? "",
+              thumbnail_base64: result.data!.thumbnail_base64,
+              exchanged_at: result.data!.exchanged_at ?? todayISO(),
+            }));
+
+            setStatus({ state: "ok" });
+            resolve();
+          } catch (e) {
+            const msg =
+              e instanceof TimeoutError
+                ? e.message
+                : e instanceof Error
+                  ? e.message
+                  : "OCR解析に失敗しました";
+            setForm((prev) => ({
+              ...EMPTY_FORM,
+              exchanged_at: prev.exchanged_at || todayISO(),
+            }));
+            setStatus({ state: "ng", message: msg });
+            reject(e);
+          }
+        };
+
+        reader.onerror = () => {
+          const msg = "画像の読み込みに失敗しました";
+          setStatus({ state: "ng", message: msg });
+          reject(new Error(msg));
+        };
+
+        // Read file as Data URL (Base64)
+        reader.readAsDataURL(f);
+      }).catch(() => {
+        // Error already handled above
+      });
     } catch (e) {
       const msg =
         e instanceof TimeoutError
@@ -168,7 +228,10 @@ export default function NewCardPage() {
           : e instanceof Error
             ? e.message
             : "OCR解析に失敗しました";
-      setForm((prev) => ({ ...EMPTY_FORM, exchanged_at: prev.exchanged_at || todayISO() }));
+      setForm((prev) => ({
+        ...EMPTY_FORM,
+        exchanged_at: prev.exchanged_at || todayISO(),
+      }));
       setStatus({ state: "ng", message: msg });
     }
   }, []);

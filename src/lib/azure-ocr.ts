@@ -6,6 +6,8 @@ import { DocumentAnalysisClient } from "@azure/ai-form-recognizer";
 // @ts-ignore - Azure SDK types not yet available in strict mode
 import { AzureKeyCredential } from "@azure/core-auth";
 import type { AzureBusinessCardResult, BusinessCardData } from "@/types/business-card";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 /**
  * Initialize Azure Form Recognizer client
@@ -221,4 +223,178 @@ function extractAddressFromText(text: string): string {
 function extractUrlFromText(text: string): string {
   const urlMatch = text.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/);
   return urlMatch ? urlMatch[0] : "";
+}
+
+/**
+ * Generate 100px thumbnail from image file
+ * Base64 encoding for storage in Supabase
+ *
+ * @param imageFile - Original image file from user
+ * @returns Base64 encoded thumbnail (100px width)
+ */
+export async function generateThumbnail(imageFile: File): Promise<string> {
+  try {
+    const bitmap = await createImageBitmap(imageFile);
+    const canvas = document.createElement("canvas");
+
+    // Calculate dimensions to maintain aspect ratio at 100px width
+    const width = 100;
+    const height = Math.round((bitmap.height / bitmap.width) * width);
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Failed to get canvas context");
+
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Failed to create blob"));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = reader.result as string;
+            resolve(base64);
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        },
+        "image/png",
+        0.8
+      );
+    });
+  } catch (error) {
+    console.error("Thumbnail generation error:", error);
+    // Return empty thumbnail on error; UI will handle gracefully
+    return "";
+  }
+}
+
+/**
+ * Save extracted business card data to Supabase
+ * Data is immediately protected by RLS (auth.uid() = user_id)
+ *
+ * @param supabase - Supabase client
+ * @param data - Normalized business card data
+ * @returns Inserted record ID
+ */
+export async function saveBusinessCardToSupabase(
+  supabase: SupabaseClient<Database>,
+  data: Partial<BusinessCardData>
+): Promise<string> {
+  if (!data.user_id) {
+    throw new Error("User ID is required");
+  }
+
+  if (!data.full_name || !data.company) {
+    throw new Error("Name and company are required fields");
+  }
+
+  // Generate UUID for new card (will be set by trigger or explicit insert)
+  const id = crypto.randomUUID();
+
+  const cardData: any = {
+    id,
+    user_id: data.user_id,
+    category_id: data.category_id || null,
+    full_name: data.full_name,
+    kana: data.kana || null,
+    company: data.company || null,
+    department: data.department || null,
+    title: data.title || null,
+    email: data.email || null,
+    phone: data.phone || null,
+    postal_code: data.postal_code || null,
+    address: data.address || null,
+    url: data.url || null,
+    notes: null,
+    thumbnail_base64: data.thumbnail_base64 || null,
+    source: data.source || "azure",
+    exchanged_at: new Date().toISOString().split("T")[0],
+    location_name: null,
+    location_lat: null,
+    location_lng: null,
+    location_accuracy_m: null,
+  };
+
+  const { data: inserted, error } = (await (supabase
+    .from("business_cards") as any)
+    .insert([cardData])
+    .select("id")
+    .single()) as any;
+
+  if (error) {
+    console.error("Supabase insert error:", error);
+    throw new Error(`Failed to save business card: ${error.message}`);
+  }
+
+  return inserted?.id || id;
+}
+
+/**
+ * Complete OCR analysis pipeline: Azure API → Normalize → Save to Supabase
+ * Server-side function for security (Azure credentials + RLS protection)
+ *
+ * @param imageUrl - Public URL of business card image (or base64)
+ * @param supabase - Supabase client
+ * @param userId - Current user ID
+ * @param imageFile - Original file for thumbnail (optional)
+ * @returns Saved business card data
+ */
+export async function analyzeAndSaveBusinessCard(
+  imageUrl: string,
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  imageFile?: File
+): Promise<BusinessCardData & { id: string }> {
+  // Step 1: Analyze with Azure
+  const azureResult = await analyzeBusinessCardWithAzure(imageUrl);
+
+  // Step 2: Normalize to BusinessCardData format
+  let normalized = normalizeAzureResult(azureResult, userId);
+
+  // Step 3: Generate thumbnail if image file provided
+  if (imageFile) {
+    try {
+      normalized.thumbnail_base64 = await generateThumbnail(imageFile);
+    } catch (error) {
+      console.warn("Thumbnail generation failed, continuing without:", error);
+    }
+  }
+
+  // Step 4: Save to Supabase (RLS protection via user_id)
+  const cardId = await saveBusinessCardToSupabase(supabase, normalized);
+
+  return {
+    id: cardId,
+    full_name: normalized.full_name || "",
+    kana: normalized.kana || null,
+    company: normalized.company || "",
+    department: normalized.department || null,
+    title: normalized.title || "",
+    email: normalized.email || "",
+    phone: normalized.phone || "",
+    mobile: normalized.mobile || null,
+    fax: normalized.fax || null,
+    postal_code: normalized.postal_code || null,
+    address: normalized.address || "",
+    url: normalized.url || null,
+    user_id: userId,
+    category_id: null,
+    notes: null,
+    thumbnail_base64: normalized.thumbnail_base64 || null,
+    source: normalized.source || "azure",
+    exchanged_at: new Date().toISOString().split("T")[0],
+    location_name: null,
+    location_lat: null,
+    location_lng: null,
+    location_accuracy_m: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 }
