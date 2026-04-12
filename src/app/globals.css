@@ -1,5 +1,46 @@
+/* Phoenix Edition v5.0.5 Design System - Global Styles */
 @import "tailwindcss";
 
+/* CSS Variables for Design System */
+:root {
+  /* Colors */
+  --color-primary: #2563EB;
+  --color-primary-dark: #1D4ED8;
+  --color-accent: #10B981;
+  --color-accent-dark: #059669;
+  --color-surface: #FFFFFF;
+  --color-surface-secondary: #F8FAFC;
+  --color-border: #E2E8F0;
+  --color-text: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94A3B8;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reset & Base Styles */
 * {
   margin: 0;
   padding: 0;
@@ -11,16 +52,220 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%);
+  background-color: var(--color-surface-secondary);
+  color: var(--color-text);
   min-height: 100vh;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code",
+    "Roboto Mono", Consolas, "Courier New", monospace;
+}
+
+/* ============================================
+   AMBE DESIGN SYSTEM COMPONENTS (via @apply)
+   ============================================ */
+
+/* CARDS - Core component for content grouping */
+@layer components {
+  .ambe-card {
+    @apply bg-white rounded-lg shadow-sm border border-slate-200 transition-all duration-200;
+  }
+
+  .ambe-card:hover {
+    @apply shadow-md border-slate-300;
+  }
+
+  .ambe-card-elevated {
+    @apply bg-white rounded-lg shadow-md border-none;
+  }
+
+  /* BUTTONS - Action elements */
+  .ambe-button {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-3 font-medium text-sm rounded-lg transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Primary Button - Filled, Trust Color */
+  .ambe-button-primary {
+    @apply ambe-button bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 shadow-sm;
+  }
+
+  .ambe-button-primary:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+
+  /* Secondary Button - Outlined */
+  .ambe-button-secondary {
+    @apply ambe-button bg-white text-slate-900 border-2 border-slate-300 hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100;
+  }
+
+  .ambe-button-secondary:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+
+  /* Accent Button - Success/positive action */
+  .ambe-button-accent {
+    @apply ambe-button bg-emerald-500 text-white hover:bg-emerald-600 active:bg-emerald-700 shadow-sm;
+  }
+
+  .ambe-button-accent:focus {
+    @apply outline-none ring-2 ring-emerald-400 ring-offset-2;
+  }
+
+  /* Danger Button - Destructive actions */
+  .ambe-button-danger {
+    @apply ambe-button bg-red-600 text-white hover:bg-red-700 active:bg-red-800 shadow-sm;
+  }
+
+  .ambe-button-danger:focus {
+    @apply outline-none ring-2 ring-red-500 ring-offset-2;
+  }
+
+  /* Ghost Button - Minimal style */
+  .ambe-button-ghost {
+    @apply ambe-button bg-transparent text-slate-600 hover:bg-slate-100 active:bg-slate-200;
+  }
+
+  /* INPUTS - Form elements */
+  .ambe-input {
+    @apply w-full px-4 py-3 text-base border border-slate-300 rounded-lg bg-white text-slate-900 placeholder-slate-400 transition-all duration-200;
+  }
+
+  .ambe-input:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2 border-blue-600;
+  }
+
+  .ambe-input:disabled {
+    @apply bg-slate-50 text-slate-500 cursor-not-allowed;
+  }
+
+  /* LABELS */
+  .ambe-label {
+    @apply block text-sm font-medium text-slate-900 mb-2;
+  }
+
+  /* CONTAINERS */
+  .ambe-container {
+    @apply w-full max-w-[600px] mx-auto;
+  }
+
+  .ambe-container-mobile {
+    @apply ambe-container px-4 py-8;
+  }
+
+  /* TYPOGRAPHY */
+  .ambe-heading-1 {
+    @apply text-3xl font-bold leading-tight text-slate-900;
+  }
+
+  .ambe-heading-2 {
+    @apply text-2xl font-bold leading-tight text-slate-900;
+  }
+
+  .ambe-heading-3 {
+    @apply text-xl font-semibold leading-tight text-slate-900;
+  }
+
+  .ambe-text-body {
+    @apply text-base leading-relaxed text-slate-900;
+  }
+
+  .ambe-text-secondary {
+    @apply text-sm leading-relaxed text-slate-600;
+  }
+
+  .ambe-text-muted {
+    @apply text-xs text-slate-500;
+  }
+
+  /* BADGES */
+  .ambe-badge {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-full;
+  }
+
+  .ambe-badge-primary {
+    @apply ambe-badge bg-blue-100 text-blue-700;
+  }
+
+  .ambe-badge-accent {
+    @apply ambe-badge bg-emerald-100 text-emerald-700;
+  }
+
+  .ambe-badge-warning {
+    @apply ambe-badge bg-amber-100 text-amber-700;
+  }
+
+  .ambe-badge-danger {
+    @apply ambe-badge bg-red-100 text-red-700;
+  }
+
+  /* DIVIDERS */
+  .ambe-divider {
+    @apply h-px bg-slate-200;
+  }
+
+  /* LINK STYLES */
+  .ambe-link {
+    @apply text-blue-600 hover:text-blue-700 underline transition-colors duration-150 cursor-pointer;
+  }
+
+  .ambe-link-subtle {
+    @apply text-slate-600 hover:text-slate-900 transition-colors duration-150 cursor-pointer;
+  }
+
+  /* FORM GROUP */
+  .ambe-form-group {
+    @apply space-y-2 mb-4;
+  }
+
+  /* MODAL/DIALOG OVERLAY */
+  .ambe-dialog-overlay {
+    @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+  }
+
+  .ambe-dialog {
+    @apply bg-white rounded-lg shadow-xl max-w-sm w-full overflow-hidden;
+  }
+
+  /* ICON SIZING */
+  .ambe-icon-sm {
+    @apply w-4 h-4;
+  }
+
+  .ambe-icon-md {
+    @apply w-5 h-5;
+  }
+
+  .ambe-icon-lg {
+    @apply w-6 h-6;
+  }
+
+  .ambe-icon-xl {
+    @apply w-8 h-8;
+  }
+
+  /* FOCUS RING (universal) */
+  .ambe-focus-ring {
+    @apply ring-2 ring-blue-500 ring-offset-2 outline-none;
+  }
+}
+
+/* Smooth transitions for interactive elements */
+button,
+a,
+input,
+textarea,
+select {
+  transition: all var(--transition-base);
+}
+
+/* Print styles */
+@media print {
+  body {
+    background-color: white;
+  }
 }
