@@ -30,25 +30,15 @@ export default function RootLayout({
         </div>
 
         {/* Content Container */}
-        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 py-8">
+        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 py-6">
           <div className="w-full max-w-[600px]">
             {/* Main Glass Card */}
             <div className="ambe-glass-card-lg px-6 py-8 relative">
-              {/* Header */}
-              <div className="mb-8 text-center">
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-white to-emerald-400 bg-clip-text text-transparent tracking-tight">
-                  あんべの名刺代わり
-                </h1>
-                <p className="text-sm text-white/60 mt-2">
-                  v5.0.5 Phoenix Edition
-                </p>
-              </div>
-
               {/* Main Content */}
               <div className="relative z-20">{children}</div>
 
               {/* Footer */}
-              <div className="mt-8 pt-6 border-t border-white/10 text-center">
+              <div className="mt-12 pt-6 border-t border-white/10 text-center">
                 <p className="text-xs text-white/50">
                   © 2026 ambe / Business_Card_Folder
                 </p>
