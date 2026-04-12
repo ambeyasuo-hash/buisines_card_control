@@ -16,15 +16,15 @@ export default function Home() {
     label: string;
     icon: React.ReactNode;
   }> = [
-    { id: 'identity', label: 'プロフィール', icon: <User className="w-4 h-4" /> },
-    { id: 'dashboard', label: 'カード', icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'rescue', label: '復旧', icon: <Shield className="w-4 h-4" /> },
+    { id: 'identity', label: 'プロフィール', icon: <User className="ambe-icon-sm" /> },
+    { id: 'dashboard', label: 'カード', icon: <FolderOpen className="ambe-icon-sm" /> },
+    { id: 'rescue', label: '復旧', icon: <Shield className="ambe-icon-sm" /> },
   ];
 
   return (
     <div className="space-y-4">
       {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-slate-200">
+      <div className="flex gap-2 ambe-divider pb-0 border-b">
         {tabConfig.map((tab) => (
           <button
             key={tab.id}
@@ -32,7 +32,7 @@ export default function Home() {
             className={`flex items-center gap-2 px-4 py-3 font-medium text-sm border-b-2 transition-all ${
               activeTab === tab.id
                 ? 'border-emerald-500 text-emerald-600 bg-emerald-50'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
+                : 'border-transparent text-slate-600 hover:text-slate-700'
             }`}
           >
             {tab.icon}
@@ -49,8 +49,8 @@ export default function Home() {
       </div>
 
       {/* Status Bar */}
-      <div className="mt-8 pt-6 border-t border-slate-200 text-center text-xs text-slate-500">
-        <p>Phase 1-3: Core UI Components Complete</p>
+      <div className="mt-8 pt-6 ambe-divider text-center text-xs text-slate-500">
+        <p className="pt-4">Phase 1-3: Design System Ready</p>
       </div>
     </div>
   );

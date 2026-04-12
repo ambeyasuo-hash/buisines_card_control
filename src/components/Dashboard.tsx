@@ -70,13 +70,13 @@ export function Dashboard() {
           placeholder="名前、企業、メールを検索..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-4 pr-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          className="ambe-input"
         />
-        <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <Search className="absolute right-4 top-1/2 transform -translate-y-1/2 ambe-icon-md text-slate-400 pointer-events-none" />
       </div>
 
       {/* Results Count */}
-      <p className="text-xs text-slate-500">
+      <p className="ambe-text-muted">
         {filteredCards.length} 件のカード
       </p>
 
@@ -86,17 +86,17 @@ export function Dashboard() {
           filteredCards.map((card) => (
             <div
               key={card.id}
-              className="border border-slate-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow hover:border-emerald-300"
+              className="ambe-card p-4"
             >
               {/* Card Header */}
-              <div className="flex items-start justify-between mb-2">
+              <div className="flex items-start justify-between mb-3">
                 <div>
                   <p className="font-medium text-sm text-slate-900">{card.name}</p>
-                  <p className="text-xs text-slate-600">{card.company}</p>
+                  <p className="ambe-text-secondary text-xs">{card.company}</p>
                 </div>
-                <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded">
-                  <Lock className="w-3 h-3 text-emerald-600" />
-                  <span className="text-xs text-emerald-700 font-medium">E2EE</span>
+                <div className="ambe-badge-accent">
+                  <Lock className="ambe-icon-sm" />
+                  <span>E2EE</span>
                 </div>
               </div>
 
@@ -109,7 +109,7 @@ export function Dashboard() {
           ))
         ) : (
           <div className="text-center py-8">
-            <p className="text-sm text-slate-500">
+            <p className="ambe-text-secondary">
               検索条件に合うカードが見つかりません
             </p>
           </div>
@@ -119,10 +119,10 @@ export function Dashboard() {
       {/* Floating Action Button - Sticky */}
       <button
         onClick={handleScanCard}
-        className="fixed bottom-8 right-8 bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+        className="fixed bottom-8 right-8 ambe-button-accent rounded-full w-14 h-14 p-0 shadow-lg hover:shadow-xl"
         title="名刺をスキャン"
       >
-        <Plus className="w-6 h-6" />
+        <Plus className="ambe-icon-lg" />
       </button>
     </div>
   );
