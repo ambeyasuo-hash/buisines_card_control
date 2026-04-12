@@ -168,12 +168,22 @@ const config: Config = {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.25" },
         },
+        float: {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        glow: {
+          "0%, 100%": { boxShadow: "0 0 20px rgba(37, 99, 235, 0.3)" },
+          "50%": { boxShadow: "0 0 30px rgba(37, 99, 235, 0.5)" },
+        },
       },
       animation: {
         scan: "scan 1.6s ease-in-out infinite",
         "scan-beam": "scan-beam 2s linear infinite",
         "bracket-pulse": "bracket-pulse 2s ease-in-out infinite",
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",
+        float: "float 3s ease-in-out infinite",
+        glow: "glow 2s ease-in-out infinite",
       },
     },
   },

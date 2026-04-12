@@ -17,28 +17,42 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className="bg-slate-100 min-h-screen">
-        {/* Ambe Design System: Mobile-Centric 600px Container with Device-like Appearance */}
-        <div className="flex items-center justify-center min-h-screen px-4 py-8">
-          <div className="w-full max-w-[600px] bg-white rounded-xl shadow-2xl overflow-hidden">
-            {/* Header Bar */}
-            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-6 py-4">
-              <h1 className="text-lg font-bold tracking-tight">
-                あんべの名刺代わり
-              </h1>
-              <p className="text-xs text-slate-300 mt-1">
-                v5.0.5 Phoenix Edition
-              </p>
-            </div>
+      <body className="relative min-h-screen overflow-x-hidden">
+        {/* Dark Gradient Background with Ambient Effects */}
+        <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-[#0F1419] to-slate-950 z-0">
+          {/* Ambient Orbs - Premium visual effect */}
+          <div className="absolute top-20 left-10 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl opacity-20"></div>
+          <div className="absolute bottom-40 right-20 w-80 h-80 bg-emerald-500/15 rounded-full blur-3xl opacity-15"></div>
+          <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-slate-500/10 rounded-full blur-3xl opacity-10 -translate-x-1/2 -translate-y-1/2"></div>
 
-            {/* Main Content */}
-            <div className="px-6 py-8">{children}</div>
+          {/* Grid Pattern Overlay (subtle) */}
+          <div className="absolute inset-0 opacity-5 bg-[linear-gradient(0deg,transparent_24%,rgba(255,255,255,.1)_25%,rgba(255,255,255,.1)_26%,transparent_27%,transparent_74%,rgba(255,255,255,.1)_75%,rgba(255,255,255,.1)_76%,transparent_77%,transparent)] bg-[length:64px_64px]"></div>
+        </div>
 
-            {/* Footer */}
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 text-center">
-              <p className="text-xs text-slate-500">
-                © 2026 ambe / Business_Card_Folder
-              </p>
+        {/* Content Container */}
+        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 py-8">
+          <div className="w-full max-w-[600px]">
+            {/* Main Glass Card */}
+            <div className="ambe-glass-card-lg px-6 py-8 relative">
+              {/* Header */}
+              <div className="mb-8 text-center">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-white to-emerald-400 bg-clip-text text-transparent tracking-tight">
+                  あんべの名刺代わり
+                </h1>
+                <p className="text-sm text-white/60 mt-2">
+                  v5.0.5 Phoenix Edition
+                </p>
+              </div>
+
+              {/* Main Content */}
+              <div className="relative z-20">{children}</div>
+
+              {/* Footer */}
+              <div className="mt-8 pt-6 border-t border-white/10 text-center">
+                <p className="text-xs text-white/50">
+                  © 2026 ambe / Business_Card_Folder
+                </p>
+              </div>
             </div>
           </div>
         </div>
