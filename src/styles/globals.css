@@ -1,7 +1,9 @@
 /* Phoenix Edition v5.0.5 Design System - Global Styles */
 @import "tailwindcss";
 
-/* CSS Variables for Design System */
+/* ============================================
+   CSS Variables - Design System Theme
+   ============================================ */
 :root {
   /* Colors */
   --color-primary: #2563EB;
@@ -40,7 +42,9 @@
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Reset & Base Styles */
+/* ============================================
+   Reset & Base Styles
+   ============================================ */
 * {
   margin: 0;
   padding: 0;
@@ -70,8 +74,8 @@ code {
    AMBE DESIGN SYSTEM COMPONENTS (via @apply)
    ============================================ */
 
-/* CARDS - Core component for content grouping */
 @layer components {
+  /* CARDS - Core component for content grouping */
   .ambe-card {
     @apply bg-white rounded-lg shadow-sm border border-slate-200 transition-all duration-200;
   }

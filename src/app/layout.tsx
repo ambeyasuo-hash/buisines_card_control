@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "./globals.css";
+import "../styles/globals.css";
 
 export const metadata: Metadata = {
   title: "あんべの名刺代わり v5.0.5 | Phoenix Edition",
@@ -17,10 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className="bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        {/* Ambe Design System: Mobile-Centric 600px Container */}
+      <body className="bg-slate-100 min-h-screen">
+        {/* Ambe Design System: Mobile-Centric 600px Container with Device-like Appearance */}
         <div className="flex items-center justify-center min-h-screen px-4 py-8">
-          <div className="w-full max-w-[600px] bg-white rounded-lg shadow-lg overflow-hidden">
+          <div className="w-full max-w-[600px] bg-white rounded-xl shadow-2xl overflow-hidden">
             {/* Header Bar */}
             <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-6 py-4">
               <h1 className="text-lg font-bold tracking-tight">
