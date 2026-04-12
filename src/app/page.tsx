@@ -1,60 +1,56 @@
+'use client';
+
+import { useState } from 'react';
+import { IdentityPage } from '@/components/IdentityPage';
+import { Dashboard } from '@/components/Dashboard';
+import { ElegantRescue } from '@/components/ElegantRescue';
+import { User, FolderOpen, Shield } from 'lucide-react';
+
+type ActiveTab = 'identity' | 'dashboard' | 'rescue';
+
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('identity');
+
+  const tabConfig: Array<{
+    id: ActiveTab;
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    { id: 'identity', label: 'プロフィール', icon: <User className="w-4 h-4" /> },
+    { id: 'dashboard', label: 'カード', icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'rescue', label: '復旧', icon: <Shield className="w-4 h-4" /> },
+  ];
+
   return (
-    <div className="space-y-6">
-      {/* System Status Animation */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-          <h2 className="text-lg font-semibold text-slate-800">
-            v5.0.5 Phoenix Edition: System Initialized
-          </h2>
-        </div>
-
-        {/* Status Message */}
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 rounded-lg p-4">
-          <p className="text-sm text-slate-600">
-            🔐 <span className="font-medium">Zero-Knowledge Architecture</span>
-            <br />
-            ⚡ <span className="font-medium">Searchable Encryption Ready</span>
-            <br />
-            💾 <span className="font-medium">Elegant Resilience Framework</span>
-          </p>
-        </div>
-
-        {/* Initialize Message */}
-        <div className="text-center space-y-2">
-          <p className="text-sm text-slate-500">
-            Ambe Design System Foundation Loaded
-          </p>
-          <div className="flex justify-center gap-2">
-            <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse"></div>
-            <div
-              className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse"
-              style={{ animationDelay: "0.2s" }}
-            ></div>
-            <div
-              className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse"
-              style={{ animationDelay: "0.4s" }}
-            ></div>
-          </div>
-        </div>
+    <div className="space-y-4">
+      {/* Tab Navigation */}
+      <div className="flex gap-2 border-b border-slate-200">
+        {tabConfig.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-3 font-medium text-sm border-b-2 transition-all ${
+              activeTab === tab.id
+                ? 'border-emerald-500 text-emerald-600 bg-emerald-50'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {tab.icon}
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Phase 1-1 Completion Status */}
-      <div className="space-y-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900">Phase 1-1 Complete</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>✅ Environment Cleanup & Project Initialization</li>
-          <li>✅ Next.js (App Router) & TypeScript Setup</li>
-          <li>✅ Tailwind CSS v4 Configuration</li>
-          <li>✅ Ambe Design System Foundation (600px Container)</li>
-          <li>✅ Normalization Module Ready</li>
-        </ul>
+      {/* Tab Content */}
+      <div className="pt-2">
+        {activeTab === 'identity' && <IdentityPage />}
+        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'rescue' && <ElegantRescue />}
       </div>
 
-      {/* Next Steps */}
-      <div className="text-center text-xs text-slate-500 border-t border-slate-200 pt-4 mt-6">
-        <p>Ready for Phase 1-2: Core Authentication & Data Pipeline</p>
+      {/* Status Bar */}
+      <div className="mt-8 pt-6 border-t border-slate-200 text-center text-xs text-slate-500">
+        <p>Phase 1-3: Core UI Components Complete</p>
       </div>
     </div>
   );
