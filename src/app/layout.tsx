@@ -1,27 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/shared/Header";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
-  title: "あんべの名刺代わり",
-  description: "BYO方式の名刺管理アプリ",
+  title: "あんべの名刺代わり v5.0.5 | Phoenix Edition",
+  description:
+    "Zero-Knowledge + Searchable Encryption + Elegant Resilience Business Card Platform",
   icons: {
-    icon: [
-      { url: "/favicon.ico" },
-      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
-    ],
-    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
+    icon: "/favicon.ico",
   },
 };
 
@@ -31,17 +16,32 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <head>
-        {/* All OCR and image processing is server-side (Azure AI Document Intelligence) */}
-        {/* No client-side WASM libraries needed */}
-      </head>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <Header />
-        <main className="flex-1">{children}</main>
+    <html lang="ja">
+      <body className="bg-gradient-to-br from-slate-50 via-white to-slate-50">
+        {/* Ambe Design System: Mobile-Centric 600px Container */}
+        <div className="flex items-center justify-center min-h-screen px-4 py-8">
+          <div className="w-full max-w-[600px] bg-white rounded-lg shadow-lg overflow-hidden">
+            {/* Header Bar */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-6 py-4">
+              <h1 className="text-lg font-bold tracking-tight">
+                あんべの名刺代わり
+              </h1>
+              <p className="text-xs text-slate-300 mt-1">
+                v5.0.5 Phoenix Edition
+              </p>
+            </div>
+
+            {/* Main Content */}
+            <div className="px-6 py-8">{children}</div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 text-center">
+              <p className="text-xs text-slate-500">
+                © 2026 ambe / Business_Card_Folder
+              </p>
+            </div>
+          </div>
+        </div>
       </body>
     </html>
   );
