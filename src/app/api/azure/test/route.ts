@@ -1,10 +1,11 @@
 /**
  * Azure Document Intelligence 接続テスト
- * クライアントサイドから受け取ったエンドポイント・キーを使用してサーバーサイドでテスト
- * CORS制限を回避するため、NextJS Route Handlerを使用
+ * サーバーサイドから Azure にリクエストを送信して接続を確認
+ * クライアントの CORS 制限を回避
  *
  * POST /api/azure/test
  * Body: { endpoint: string, apiKey: string }
+ * Response: { ok: boolean, message: string, statusCode?: number }
  */
 
 interface RequestBody {
@@ -23,13 +24,17 @@ export async function POST(request: Request): Promise<Response> {
     const body = (await request.json()) as RequestBody;
     const { endpoint, apiKey } = body;
 
-    // バリデーション
-    if (!endpoint?.trim() || !apiKey?.trim()) {
+    // 入力チェック
+    if (!endpoint?.trim()) {
       return Response.json(
-        {
-          ok: false,
-          message: 'Endpoint と API Key を入力してください',
-        } as TestResponse,
+        { ok: false, message: 'Endpoint を入力してください' } as TestResponse,
+        { status: 400 },
+      );
+    }
+
+    if (!apiKey?.trim()) {
+      return Response.json(
+        { ok: false, message: 'API Key を入力してください' } as TestResponse,
         { status: 400 },
       );
     }
@@ -39,57 +44,45 @@ export async function POST(request: Request): Promise<Response> {
     if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;
     }
-    // 末尾のスラッシュを削除
     baseUrl = baseUrl.replace(/\/$/, '');
 
-    // Document Intelligence API テスト
-    // 複数のエンドポイント形式に対応
-    const testUrls = [
-      // 新しい形式: documentintelligence (GET)
-      `${baseUrl}/documentintelligence/document-models:list?api-version=2024-02-29-preview`,
-      // 新しい形式: documentintelligence (POST analyze)
-      `${baseUrl}/documentintelligence/document-models/prebuilt-read:analyze?api-version=2024-02-29-preview`,
-      // 旧形式: formrecognizer (GET)
-      `${baseUrl}/formrecognizer/documentModels:list?api-version=2023-10-31-preview`,
-      // 旧形式: formrecognizer (POST)
-      `${baseUrl}/formrecognizer/v3.0/document-models/prebuilt-read/analyze?api-version=2023-10-31-preview`,
-      // 代替形式
-      `${baseUrl}/formrecognizer/v2.1/recognizeBusinessCards?language=ja`,
-      // ステータスチェック
-      `${baseUrl}/status`,
+    console.log('[Azure Test] Testing endpoint:', baseUrl);
+
+    // Azure Document Intelligence への POST リクエスト
+    // 複数のパスを試す
+    const paths = [
+      '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2024-02-29-preview',
+      '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-10-31-preview',
+      '/formrecognizer/documentModels:list?api-version=2023-10-31-preview',
+      '/formrecognizer/v3.0/document-models:list?api-version=2023-10-31-preview',
     ];
 
-    let lastError: Error | null = null;
-    let lastResponse: Response | null = null;
-    const attempts: Array<{ url: string; status?: number; error?: string }> = [];
+    let lastError: { status?: number; message?: string } | null = null;
 
-    // 複数の API パスを試す
-    for (const testUrl of testUrls) {
+    for (const path of paths) {
       try {
-        // AbortController でタイムアウトを実装
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const testUrl = `${baseUrl}${path}`;
+        console.log('[Azure Test] Trying:', testUrl);
 
-        // URL に :analyze が含まれていれば POST、そうでなければ GET
-        const method = testUrl.includes(':analyze') ? 'POST' : 'GET';
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const response = await fetch(testUrl, {
-          method,
+          method: 'POST',
           headers: {
             'Ocp-Apim-Subscription-Key': apiKey.trim(),
-            ...(method === 'POST' ? { 'Content-Type': 'application/octet-stream' } : {}),
+            'Content-Type': 'application/octet-stream',
           },
-          ...(method === 'POST' ? { body: Buffer.from([0xff, 0xd8, 0xff, 0xe0]) } : {}),
+          // 無効な JPEG ヘッダーを送信（エンドポイント存在確認用）
+          body: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
+        console.log('[Azure Test] Response status:', response.status);
 
-        lastResponse = response;
-        attempts.push({ url: testUrl, status: response.status });
-
-        // 200: 成功
-        if (response.ok) {
+        // 200-299: 成功
+        if (response.status >= 200 && response.status < 300) {
           return Response.json(
             {
               ok: true,
@@ -100,165 +93,150 @@ export async function POST(request: Request): Promise<Response> {
           );
         }
 
-        // 401/403: API キーエラー
-        if (response.status === 401 || response.status === 403) {
+        // 400: Bad Request - エンドポイントは存在するが、ボディが無効（期待動作）
+        if (response.status === 400) {
           return Response.json(
             {
-              ok: false,
-              message:
-                'API Key が無効です。\n\n' +
-                'Azure Portal で正しい API Key を確認し、\n' +
-                '設定画面で再度入力してください。',
+              ok: true,
+              message: 'Azure Document Intelligence に接続しました ✓',
               statusCode: response.status,
             } as TestResponse,
             { status: 200 },
           );
         }
 
-        // 404: エンドポイント形式が合致しない可能性
+        // 401/403: Unauthorized/Forbidden - API キーが無効
+        if (response.status === 401 || response.status === 403) {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'API Key が無効です。\n\n' +
+                'Azure Portal で以下を確認してください：\n' +
+                '1. リソースが存在するか\n' +
+                '2. API Key が正しいか（複製貼り付けエラーがないか）\n' +
+                '3. API Key の有効期限が切れていないか',
+              statusCode: response.status,
+            } as TestResponse,
+            { status: 200 },
+          );
+        }
+
+        // 404: Not Found - このパスは存在しない、次を試す
         if (response.status === 404) {
-          lastError = new Error(`All API paths returned 404`);
-          continue; // 次のパスを試す
+          lastError = { status: 404, message: 'Path not found, trying next...' };
+          continue;
         }
 
         // その他のエラー
-        if (response.status >= 400) {
-          lastError = new Error(`HTTP ${response.status}`);
-          continue;
+        if (response.status >= 500) {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'Azure サービスが利用できません。\n\n' +
+                'Azure のステータスページを確認するか、\n' +
+                'しばらく時間をおいてから再度お試しください。',
+              statusCode: response.status,
+            } as TestResponse,
+            { status: 200 },
+          );
         }
+
+        // その他の 4xx エラー
+        lastError = { status: response.status, message: `HTTP ${response.status}` };
+        continue;
       } catch (err) {
         const error = err as Error;
-        attempts.push({ url: testUrl, error: error.message });
-        lastError = error;
-        continue; // 次のパスを試す
+        console.log('[Azure Test] Fetch error:', error.message);
+
+        // ネットワークエラー
+        if (error.message.includes('ENOTFOUND') || error.message.includes('getaddrinfo')) {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'エンドポイントのドメインが見つかりません。\n\n' +
+                'Azure Portal で Endpoint URL を確認して、\n' +
+                '正確に入力してください。\n\n' +
+                '例: https://businesscard-ngtest.cognitiveservices.azure.com',
+              statusCode: 0,
+            } as TestResponse,
+            { status: 200 },
+          );
+        }
+
+        // 接続拒否
+        if (error.message.includes('ECONNREFUSED')) {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'Azure エンドポイントに接続できません。\n\n' +
+                'ネットワーク接続を確認して、\n' +
+                'Endpoint URL が正しいか確認してください。',
+              statusCode: 0,
+            } as TestResponse,
+            { status: 200 },
+          );
+        }
+
+        // タイムアウト
+        if (error.message.includes('abort')) {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'リクエストがタイムアウトしました。\n\n' +
+                'ネットワーク接続が遅い可能性があります。\n' +
+                'しばらく時間をおいてから再度お試しください。',
+              statusCode: 0,
+            } as TestResponse,
+            { status: 200 },
+          );
+        }
+
+        lastError = { message: error.message };
+        continue;
       }
     }
 
-    // デバッグ: どのパスが試されたかをコンソールに出力
-    console.error('[Azure Test Debug]', {
-      endpoint: baseUrl,
-      attempts,
-      lastError: lastError?.message,
-    });
-
-    // すべてのパスが失敗した場合
-    if (lastError) {
-      const errorMsg = (lastError as Error).message;
-
-      // ネットワークエラー
-      if (
-        errorMsg.includes('ENOTFOUND') ||
-        errorMsg.includes('getaddrinfo') ||
-        errorMsg.includes('ECONNREFUSED')
-      ) {
-        return Response.json(
-          {
-            ok: false,
-            message:
-              'Azure エンドポイントに接続できません。\n\n' +
-              'エンドポイント URL を確認してください。\n' +
-              '例：https://buisinesscard.cognitiveservices.azure.com',
-          } as TestResponse,
-          { status: 200 },
-        );
-      }
-
-      // タイムアウト
-      if (errorMsg.includes('timeout') || errorMsg.includes('abort')) {
-        return Response.json(
-          {
-            ok: false,
-            message:
-              'リクエストがタイムアウトしました。\n\n' +
-              'ネットワーク接続を確認してから、\n' +
-              'もう一度お試しください。',
-          } as TestResponse,
-          { status: 200 },
-        );
-      }
-
-      // すべてのパスで 404 が返された場合
-      if (errorMsg.includes('404')) {
-        return Response.json(
-          {
-            ok: false,
-            message:
-              'Document Intelligence リソースが見つかりません。\n\n' +
-              'Azure Portal で以下を確認してください：\n' +
-              '1. リソースが存在するか\n' +
-              '2. リソースの種類が「Document Intelligence」か\n' +
-              '3. リソース名が「buisinesscard」か\n' +
-              '4. API Key がそのリソースに対して有効か\n\n' +
-              'リソースが存在する場合は、\n' +
-              'エンドポイント URL を確認してください。',
-          } as TestResponse,
-          { status: 200 },
-        );
-      }
-    }
-
-    // 最後のレスポンスがある場合、そのステータスコードに基づいてエラーを返す
-    if (lastResponse) {
-      const statusCode = lastResponse.status;
-
-      if (statusCode === 404) {
-        return Response.json(
-          {
-            ok: false,
-            message:
-              'Document Intelligence リソースが見つかりません。\n\n' +
-              'Azure Portal で以下を確認してください：\n' +
-              '1. リソースが存在するか\n' +
-              '2. リソースの種類が「Document Intelligence」か\n' +
-              '3. API Key がそのリソースに対して有効か',
-            statusCode,
-          } as TestResponse,
-          { status: 200 },
-        );
-      }
-
-      if (statusCode === 400) {
-        return Response.json(
-          {
-            ok: false,
-            message:
-              'リクエストが無効です。\n\n' +
-              'エンドポイント URL が正しい形式か確認してください。\n' +
-              '例：https://buisinesscard.cognitiveservices.azure.com',
-            statusCode,
-          } as TestResponse,
-          { status: 200 },
-        );
-      }
-
+    // すべてのパスが 404 を返した場合
+    if (lastError?.status === 404) {
       return Response.json(
         {
           ok: false,
-          message: `Azure からエラーが返されました（HTTP ${statusCode}）。\n\n` +
-            'エンドポイントと API Key を確認してください。',
-          statusCode,
+          message:
+            'Document Intelligence リソースが見つかりません。\n\n' +
+            'Azure Portal で以下を確認してください：\n' +
+            '1. リソースの種類が「Document Intelligence」か\n' +
+            '2. リソース名が正しいか\n' +
+            '3. Endpoint URL が https://RESOURCE.cognitiveservices.azure.com の形式か',
+          statusCode: 404,
         } as TestResponse,
         { status: 200 },
       );
     }
 
-    // 予期しないエラー
+    // デフォルトエラー
     return Response.json(
       {
         ok: false,
         message:
-          '予期しないエラーが発生しました。\n\n' +
-          'エンドポイントと API Key を確認してから、\n' +
+          'Azure に接続できません。\n\n' +
+          'Endpoint と API Key を確認してから、\n' +
           'もう一度お試しください。',
       } as TestResponse,
       { status: 200 },
     );
   } catch (err) {
     const error = err as Error;
+    console.error('[Azure Test] Error:', error);
+
     return Response.json(
       {
         ok: false,
-        message: `エラー: ${error.message}`,
+        message: `エラーが発生しました：${error.message}`,
       } as TestResponse,
       { status: 500 },
     );
