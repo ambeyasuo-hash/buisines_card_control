@@ -54,13 +54,13 @@ async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
     body: JSON.stringify({ imageBase64: hiresBase64, endpoint, apiKey }),
   });
 
-  const data = await res.json() as { ok: boolean; lines?: string[]; error?: string };
+  const data = await res.json() as { ok: boolean; result?: OcrResult; error?: string };
 
-  if (!data.ok || !data.lines) {
+  if (!data.ok || !data.result) {
     return { error: data.error ?? '名刺の読み取りに失敗しました。もう一度お試しください。' };
   }
 
-  return parseBusinessCard(data.lines);
+  return data.result;
 }
 
 // ─── Simple business card parser ──────────────────────────────────────────────

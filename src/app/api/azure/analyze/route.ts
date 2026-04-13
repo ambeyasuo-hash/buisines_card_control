@@ -1,22 +1,58 @@
 /**
  * Azure Document Intelligence OCR — サーバーサイドプロキシ
  * フロントエンドの CORS 制限を回避するためサーバー経由で Azure を呼び出す
+ * モデル: prebuilt-businessCard（名刺専用）
  *
  * POST /api/azure/analyze
- * Body: { imageBase64: string }  ← data:image/jpeg;base64,... 形式
- * Response: { ok: boolean; lines?: string[]; error?: string }
+ * Body: { imageBase64: string, endpoint?: string, apiKey?: string }
+ * Response: { ok: boolean; result?: OcrResult; error?: string }
  */
 
 interface RequestBody {
   imageBase64?: string;
-  endpoint?: string;  // localStorage から渡す（環境変数のフォールバック）
-  apiKey?: string;    // localStorage から渡す（環境変数のフォールバック）
+  endpoint?: string;
+  apiKey?: string;
+}
+
+// scan/page.tsx の OcrResult と同じ構造
+interface OcrResult {
+  name?:    string;
+  company?: string;
+  title?:   string;
+  email?:   string;
+  tel?:     string;
+  address?: string;
+  raw?:     string;
 }
 
 interface AnalyzeResponse {
   ok: boolean;
-  lines?: string[];
+  result?: OcrResult;
   error?: string;
+}
+
+// prebuilt-businessCard の documents[].fields 型定義
+interface BusinessCardField {
+  content?: string;
+  valueString?: string;
+}
+interface BusinessCardFieldArray {
+  valueArray?: Array<{
+    content?: string;
+    valueString?: string;
+    valueObject?: Record<string, BusinessCardField>;
+  }>;
+}
+interface BusinessCardFields {
+  ContactNames?:  BusinessCardFieldArray;
+  CompanyNames?:  BusinessCardFieldArray;
+  JobTitles?:     BusinessCardFieldArray;
+  Emails?:        BusinessCardFieldArray;
+  MobilePhones?:  BusinessCardFieldArray;
+  WorkPhones?:    BusinessCardFieldArray;
+  OtherPhones?:   BusinessCardFieldArray;
+  Addresses?:     BusinessCardFieldArray;
+  Websites?:      BusinessCardFieldArray;
 }
 
 /** Base64 data URL → ArrayBuffer */
@@ -26,11 +62,53 @@ function base64ToArrayBuffer(dataUrl: string): ArrayBuffer {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }
 
-/** ポーリング：succeeded になるまで最大 30 秒待つ */
+/** valueArray の先頭 content を取り出す */
+function firstContent(field?: BusinessCardFieldArray): string | undefined {
+  return field?.valueArray?.[0]?.content?.trim() || undefined;
+}
+
+/** prebuilt-businessCard の documents[].fields を OcrResult にマッピング */
+function mapBusinessCardFields(fields: BusinessCardFields): OcrResult {
+  // 氏名: LastName + FirstName を結合
+  let name: string | undefined;
+  const nameArr = fields.ContactNames?.valueArray ?? [];
+  if (nameArr.length > 0) {
+    const obj = nameArr[0].valueObject ?? {};
+    const last  = obj.LastName?.content?.trim()  ?? '';
+    const first = obj.FirstName?.content?.trim() ?? '';
+    name = [last, first].filter(Boolean).join(' ') || nameArr[0].content?.trim();
+  }
+
+  // 電話: モバイル優先、なければ会社番号
+  const tel = firstContent(fields.MobilePhones)
+           ?? firstContent(fields.WorkPhones)
+           ?? firstContent(fields.OtherPhones);
+
+  // raw テキスト: 全フィールドを結合
+  const rawParts: string[] = [];
+  if (name)                              rawParts.push(name);
+  if (firstContent(fields.CompanyNames)) rawParts.push(firstContent(fields.CompanyNames)!);
+  if (firstContent(fields.JobTitles))    rawParts.push(firstContent(fields.JobTitles)!);
+  if (firstContent(fields.Emails))       rawParts.push(firstContent(fields.Emails)!);
+  if (tel)                               rawParts.push(tel);
+  if (firstContent(fields.Addresses))    rawParts.push(firstContent(fields.Addresses)!);
+
+  return {
+    name,
+    company: firstContent(fields.CompanyNames),
+    title:   firstContent(fields.JobTitles),
+    email:   firstContent(fields.Emails),
+    tel,
+    address: firstContent(fields.Addresses),
+    raw:     rawParts.join('\n'),
+  };
+}
+
+/** ポーリング: succeeded になるまで最大 30 秒待つ */
 async function pollResult(
   operationUrl: string,
   apiKey: string,
-): Promise<string[]> {
+): Promise<OcrResult> {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1000));
 
@@ -38,49 +116,26 @@ async function pollResult(
       headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     });
 
-    if (!res.ok) {
-      throw new Error(`ポーリング失敗: HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`ポーリング失敗: HTTP ${res.status}`);
 
     const data = await res.json() as {
       status: string;
       analyzeResult?: {
-        content?: string;
-        pages?: Array<{
-          lines?: Array<{ content?: string }>;
-        }>;
+        documents?: Array<{ fields?: BusinessCardFields }>;
       };
     };
 
     if (data.status === 'failed') {
-      throw new Error('Azure Document Intelligence の解析に失敗しました');
+      throw new Error('Azure の解析に失敗しました');
     }
 
     if (data.status === 'succeeded') {
-      const lines: string[] = [];
-
-      // Document Intelligence 形式: pages[].lines[].content
-      if (data.analyzeResult?.pages) {
-        for (const page of data.analyzeResult.pages) {
-          for (const line of page.lines ?? []) {
-            if (line.content?.trim()) lines.push(line.content.trim());
-          }
-        }
+      const fields = data.analyzeResult?.documents?.[0]?.fields;
+      if (!fields) {
+        throw new Error('名刺フィールドの取得に失敗しました');
       }
-
-      // フォールバック: content フィールド全体を行分割
-      if (lines.length === 0 && data.analyzeResult?.content) {
-        lines.push(
-          ...data.analyzeResult.content
-            .split('\n')
-            .map((l) => l.trim())
-            .filter(Boolean),
-        );
-      }
-
-      return lines;
+      return mapBusinessCardFields(fields);
     }
-
     // running / notStarted → 次のループへ
   }
 
@@ -99,21 +154,14 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // 環境変数を優先、なければクライアントから受け取った値を使用
-    const endpoint = (
-      process.env.AZURE_OCR_ENDPOINT ?? bodyEndpoint ?? ''
-    ).trim().replace(/\/$/, '');
-    const apiKey = (
-      process.env.AZURE_OCR_KEY ?? bodyApiKey ?? ''
-    ).trim();
+    const endpoint = (process.env.AZURE_OCR_ENDPOINT ?? bodyEndpoint ?? '').trim().replace(/\/$/, '');
+    const apiKey   = (process.env.AZURE_OCR_KEY      ?? bodyApiKey  ?? '').trim();
 
     if (!endpoint || !apiKey) {
       return Response.json(
         {
           ok: false,
-          error:
-            'Azure の設定が見つかりません。\n\n' +
-            '設定画面でエンドポイントと API Key を入力して保存してください。',
+          error: 'Azure の設定が見つかりません。\n\n設定画面でエンドポイントと API Key を入力して保存してください。',
         } as AnalyzeResponse,
         { status: 200 },
       );
@@ -121,13 +169,11 @@ export async function POST(request: Request): Promise<Response> {
 
     const imageBuffer = base64ToArrayBuffer(imageBase64);
 
-    // 新旧両方の API パスを試す
-    // リソースの種類によって対応するパスが異なるため順番に試行
+    // prebuilt-businessCard で locale=ja-JP を明示指定
+    // 旧 formrecognizer パスを先に試し、新 documentintelligence をフォールバック
     const analyzePaths = [
-      // 旧 Form Recognizer（接続テストで実際に成功確認済み）
-      `${endpoint}/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31`,
-      // 新 Document Intelligence（新規リソース向け）
-      `${endpoint}/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-10-31-preview`,
+      `${endpoint}/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31&locale=ja-JP`,
+      `${endpoint}/documentintelligence/document-models/prebuilt-businessCard:analyze?api-version=2023-10-31-preview&locale=ja-JP`,
     ];
 
     let submitRes: Response | null = null;
@@ -149,71 +195,48 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json(
           {
             ok: false,
-            error:
-              'API Key が無効です。\n\n' +
-              '設定画面で Azure の API Key を確認してください。',
+            error: 'API Key が無効です。\n\n設定画面で Azure の API Key を確認してください。',
           } as AnalyzeResponse,
           { status: 200 },
         );
       }
 
       if (res.status !== 404) {
-        // 202 Accepted または 400 以外の場合はこのパスを採用
         submitRes = res;
         break;
       }
-      // 404 なら次のパスを試す
     }
 
     if (!submitRes || !submitRes.ok) {
-      if (lastStatus === 404) {
-        return Response.json(
-          {
-            ok: false,
-            error:
-              'Azure のエンドポイントが見つかりません。\n\n' +
-              '設定画面でエンドポイント URL を確認してください。',
-          } as AnalyzeResponse,
-          { status: 200 },
-        );
-      }
       return Response.json(
         {
           ok: false,
-          error: `Azure へのリクエストに失敗しました（HTTP ${lastStatus}）`,
+          error: lastStatus === 404
+            ? 'Azure のエンドポイントが見つかりません。\n\n設定画面でエンドポイント URL を確認してください。'
+            : `Azure へのリクエストに失敗しました（HTTP ${lastStatus}）`,
         } as AnalyzeResponse,
         { status: 200 },
       );
     }
 
-    // 202 Accepted → Operation-Location でポーリング
     const operationUrl = submitRes.headers.get('Operation-Location');
     if (!operationUrl) {
       return Response.json(
-        {
-          ok: false,
-          error: 'Azure からの応答に Operation-Location がありません',
-        } as AnalyzeResponse,
+        { ok: false, error: 'Azure からの応答に Operation-Location がありません' } as AnalyzeResponse,
         { status: 200 },
       );
     }
 
-    const lines = await pollResult(operationUrl, apiKey);
+    const result = await pollResult(operationUrl, apiKey);
 
-    return Response.json(
-      { ok: true, lines } as AnalyzeResponse,
-      { status: 200 },
-    );
+    return Response.json({ ok: true, result } as AnalyzeResponse, { status: 200 });
   } catch (err) {
     const error = err as Error;
     console.error('[Azure Analyze] Error:', error.message);
-
     return Response.json(
       {
         ok: false,
-        error:
-          '名刺の読み取り中にエラーが発生しました。\n\n' +
-          '光の反射を抑えて、もう少し近づいて撮影してみてください。',
+        error: '名刺の読み取り中にエラーが発生しました。\n\n光の反射を抑えて、もう少し近づいて撮影してみてください。',
       } as AnalyzeResponse,
       { status: 200 },
     );
