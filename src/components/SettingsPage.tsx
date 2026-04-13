@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
-  Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle,
+  Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader,
 } from 'lucide-react';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
@@ -28,6 +28,52 @@ const AZURE_REGIONS = [
   { value: 'southeastasia', label: 'southeastasia （東南アジア）' },
 ] as const;
 
+// ─── API Links & Help Text ────────────────────────────────────────────────────
+const API_CONFIG = {
+  supabase: {
+    url: 'https://supabase.com/dashboard/project',
+    helpTexts: {
+      url: 'Project Settings > API に表示される Project URL をコピー',
+      anonKey: 'Project Settings > API > anon public key をコピー',
+    },
+  },
+  azure: {
+    url: 'https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/ComputerVision',
+    helpTexts: {
+      endpoint: 'Endpoints セクションのエンドポイント URL をコピー',
+      key: 'Keys and Endpoint セクションのキー1 または キー2 をコピー',
+      region: '⚠️ データセンターの場所を決定します。日本リージョンを推奨',
+    },
+  },
+  gemini: {
+    url: 'https://aistudio.google.com/app/apikey',
+    helpTexts: {
+      key: 'APIキーを作成 → コピー',
+    },
+  },
+};
+
+// ─── Validation Functions ─────────────────────────────────────────────────────
+function validateSupabaseUrl(url: string): boolean {
+  return url.trim().startsWith('https://') && url.includes('.supabase.co');
+}
+
+function validateSupabaseKey(key: string): boolean {
+  return key.startsWith('eyJ') && key.length > 150;
+}
+
+function validateAzureEndpoint(endpoint: string): boolean {
+  return endpoint.trim().startsWith('https://') && endpoint.includes('.cognitiveservices.azure.com');
+}
+
+function validateAzureKey(key: string): boolean {
+  return /^[a-zA-Z0-9]{32}$/.test(key.trim());
+}
+
+function validateGeminiKey(key: string): boolean {
+  return key.startsWith('AIza') && key.length >= 39;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface FormState {
   supabaseUrl:     string;
@@ -38,8 +84,9 @@ interface FormState {
   geminiKey:       string;
 }
 
+type ValidationState = Record<keyof FormState, 'valid' | 'invalid' | 'empty'>;
 type VisibilityState = Record<'supabaseAnonKey' | 'azureKey' | 'geminiKey', boolean>;
-
+type ConnectionStatus = Record<'supabase' | 'azure' | 'gemini', 'idle' | 'checking' | 'success' | 'error'>;
 type ToastType = 'success' | 'error';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -75,6 +122,23 @@ function saveStorage(f: FormState) {
 function allEmpty(f: FormState) {
   return !f.supabaseUrl.trim() && !f.supabaseAnonKey.trim() &&
          !f.azureEndpoint.trim() && !f.azureKey.trim() && !f.geminiKey.trim();
+}
+
+function computeValidation(f: FormState): ValidationState {
+  return {
+    supabaseUrl: !f.supabaseUrl.trim() ? 'empty' : validateSupabaseUrl(f.supabaseUrl) ? 'valid' : 'invalid',
+    supabaseAnonKey: !f.supabaseAnonKey.trim() ? 'empty' : validateSupabaseKey(f.supabaseAnonKey) ? 'valid' : 'invalid',
+    azureEndpoint: !f.azureEndpoint.trim() ? 'empty' : validateAzureEndpoint(f.azureEndpoint) ? 'valid' : 'invalid',
+    azureKey: !f.azureKey.trim() ? 'empty' : validateAzureKey(f.azureKey) ? 'valid' : 'invalid',
+    azureRegion: f.azureRegion ? 'valid' : 'empty',
+    geminiKey: !f.geminiKey.trim() ? 'empty' : validateGeminiKey(f.geminiKey) ? 'valid' : 'invalid',
+  };
+}
+
+function hasValidPair(f: FormState, v: ValidationState): boolean {
+  return (v.supabaseUrl === 'valid' && v.supabaseAnonKey === 'valid') ||
+         (v.azureEndpoint === 'valid' && v.azureKey === 'valid') ||
+         (v.geminiKey === 'valid');
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -132,6 +196,7 @@ function SecretInput({
   placeholder,
   visible,
   onToggle,
+  validationState,
 }: {
   id: string;
   value: string;
@@ -139,7 +204,14 @@ function SecretInput({
   placeholder: string;
   visible: boolean;
   onToggle: () => void;
+  validationState?: 'valid' | 'invalid' | 'empty';
 }) {
+  const getBorderColor = () => {
+    if (validationState === 'valid') return 'rgba(16,185,129,0.50)';
+    if (validationState === 'invalid') return 'rgba(239,68,68,0.50)';
+    return 'rgba(59,130,246,0.50)';
+  };
+
   return (
     <div style={{ position: 'relative' }}>
       <input
@@ -164,8 +236,8 @@ function SecretInput({
           boxSizing: 'border-box',
         }}
         onFocus={(e) => {
-          e.currentTarget.style.border = '1px solid rgba(59,130,246,0.50)';
-          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)';
+          e.currentTarget.style.border = `1px solid ${getBorderColor()}`;
+          e.currentTarget.style.boxShadow = `0 0 0 3px ${validationState === 'valid' ? 'rgba(16,185,129,0.12)' : 'rgba(37,99,235,0.12)'}`;
         }}
         onBlur={(e) => {
           e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
@@ -194,10 +266,16 @@ function SecretInput({
 
 /** Plain text input (for URL fields) */
 function TextInput({
-  id, value, onChange, placeholder, type = 'text',
+  id, value, onChange, placeholder, type = 'text', validationState,
 }: {
-  id: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string;
+  id: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string; validationState?: 'valid' | 'invalid' | 'empty';
 }) {
+  const getBorderColor = () => {
+    if (validationState === 'valid') return 'rgba(16,185,129,0.50)';
+    if (validationState === 'invalid') return 'rgba(239,68,68,0.50)';
+    return 'rgba(59,130,246,0.50)';
+  };
+
   return (
     <input
       id={id}
@@ -221,8 +299,8 @@ function TextInput({
         boxSizing: 'border-box',
       }}
       onFocus={(e) => {
-        e.currentTarget.style.border = '1px solid rgba(59,130,246,0.50)';
-        e.currentTarget.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)';
+        e.currentTarget.style.border = `1px solid ${getBorderColor()}`;
+        e.currentTarget.style.boxShadow = `0 0 0 3px ${validationState === 'valid' ? 'rgba(16,185,129,0.12)' : 'rgba(37,99,235,0.12)'}`;
       }}
       onBlur={(e) => {
         e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
@@ -302,6 +380,64 @@ function FieldLabel({ label, hint }: { label: string; hint: string }) {
   );
 }
 
+/** Field label with external link + inline help */
+function FieldLabelWithLink({
+  label,
+  helpText,
+  externalUrl,
+}: {
+  label: string;
+  helpText: string;
+  externalUrl?: string;
+}) {
+  return (
+    <div style={{ marginBottom: '8px', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '6px' }}>
+      <div>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.5px', textTransform: 'uppercase' as const }}>
+          {label}
+        </span>
+      </div>
+      {externalUrl && (
+        <motion.a
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            fontSize: '9px',
+            color: 'rgba(59,130,246,0.70)',
+            textDecoration: 'none',
+            padding: '2px 4px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'rgba(59,130,246,1)';
+            e.currentTarget.style.background = 'rgba(59,130,246,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'rgba(59,130,246,0.70)';
+            e.currentTarget.style.background = 'none';
+          }}
+        >
+          <span>管理画面へ</span>
+          <ExternalLink style={{ width: '10px', height: '10px' }} />
+        </motion.a>
+      )}
+      <div style={{ width: '100%' }}>
+        <p style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.30)', margin: '4px 0 0 0', lineHeight: '1.4' }}>
+          💡 {helpText}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Section card shell */
 function SectionCard({
   children,
@@ -326,6 +462,62 @@ function SectionCard({
     >
       {children}
     </motion.div>
+  );
+}
+
+/** Connection Status Indicator */
+function ConnectionIndicator({
+  status,
+  label,
+}: {
+  status: 'idle' | 'checking' | 'success' | 'error';
+  label: string;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+      <AnimatePresence mode="wait">
+        {status === 'idle' && (
+          <div key="idle" style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'rgba(255,255,255,0.15)' }} />
+        )}
+        {status === 'checking' && (
+          <motion.div
+            key="checking"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            style={{ width: '12px', height: '12px' }}
+          >
+            <Loader style={{ width: '12px', height: '12px', color: 'rgba(251,191,36,0.80)' }} />
+          </motion.div>
+        )}
+        {status === 'success' && (
+          <motion.div
+            key="success"
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            style={{ width: '12px', height: '12px' }}
+          >
+            <Check style={{ width: '12px', height: '12px', color: '#10b981' }} strokeWidth={3} />
+          </motion.div>
+        )}
+        {status === 'error' && (
+          <motion.div
+            key="error"
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            exit={{ scale: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            style={{ width: '12px', height: '12px' }}
+          >
+            <X style={{ width: '12px', height: '12px', color: '#ef4444' }} strokeWidth={3} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <span style={{ color: status === 'success' ? '#10b981' : status === 'error' ? '#ef4444' : 'rgba(255,255,255,0.50)' }}>
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -377,17 +569,31 @@ export function SettingsPage() {
   const [vis, setVis] = useState<VisibilityState>({
     supabaseAnonKey: false, azureKey: false, geminiKey: false,
   });
+  const [validation, setValidation] = useState<ValidationState>({
+    supabaseUrl: 'empty', supabaseAnonKey: 'empty', azureEndpoint: 'empty', azureKey: 'empty', azureRegion: 'empty', geminiKey: 'empty',
+  });
+  const [connStatus, setConnStatus] = useState<ConnectionStatus>({
+    supabase: 'idle', azure: 'idle', gemini: 'idle',
+  });
+  const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast]     = useState<{ type: ToastType; message: string } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
-  const [validationErr, setValidationErr] = useState(false);
 
   // Load from localStorage on mount
-  useEffect(() => { setForm(loadStorage()); }, []);
+  useEffect(() => {
+    const loaded = loadStorage();
+    setForm(loaded);
+    setValidation(computeValidation(loaded));
+  }, []);
 
   const field = useCallback(
     <K extends keyof FormState>(key: K) =>
-      (value: string) => setForm((prev) => ({ ...prev, [key]: value })),
-    [],
+      (value: string) => {
+        const updated = { ...form, [key]: value };
+        setForm(updated);
+        setValidation(computeValidation(updated));
+      },
+    [form],
   );
 
   const toggleVis = useCallback(
@@ -402,30 +608,100 @@ export function SettingsPage() {
     setTimeout(() => setToastVisible(false), 2600);
   }, []);
 
-  const handleSave = useCallback(() => {
+  const checkConnection = useCallback(async () => {
+    setConnStatus({ supabase: 'idle', azure: 'idle', gemini: 'idle' });
+
+    // Supabase check
+    if (validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid') {
+      setConnStatus((s) => ({ ...s, supabase: 'checking' }));
+      try {
+        // Minimal supabase-js check (URL sanity)
+        const response = await fetch(`${form.supabaseUrl.trim()}/auth/v1/user`, {
+          headers: { Authorization: `Bearer ${form.supabaseAnonKey.trim()}` },
+        });
+        setConnStatus((s) => ({ ...s, supabase: response.ok || response.status === 401 ? 'success' : 'error' }));
+      } catch {
+        setConnStatus((s) => ({ ...s, supabase: 'error' }));
+      }
+    }
+
+    // Azure check
+    if (validation.azureEndpoint === 'valid' && validation.azureKey === 'valid') {
+      setConnStatus((s) => ({ ...s, azure: 'checking' }));
+      try {
+        const response = await fetch(`${form.azureEndpoint.trim()}/vision/v3.2/read`, {
+          method: 'HEAD',
+          headers: { 'Ocp-Apim-Subscription-Key': form.azureKey.trim() },
+        });
+        setConnStatus((s) => ({ ...s, azure: response.ok || response.status === 401 ? 'success' : 'error' }));
+      } catch {
+        setConnStatus((s) => ({ ...s, azure: 'error' }));
+      }
+    }
+
+    // Gemini check (minimal API call)
+    if (validation.geminiKey === 'valid') {
+      setConnStatus((s) => ({ ...s, gemini: 'checking' }));
+      try {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'hello' }] }],
+            safetySettings: [],
+            generationConfig: { maxOutputTokens: 1 },
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const url = new URL(response.url);
+        url.searchParams.set('key', form.geminiKey.trim());
+        setConnStatus((s) => ({ ...s, gemini: response.ok || response.status === 400 ? 'success' : 'error' }));
+      } catch {
+        setConnStatus((s) => ({ ...s, gemini: 'error' }));
+      }
+    }
+  }, [form, validation]);
+
+  const handleSave = useCallback(async () => {
     if (allEmpty(form)) {
-      setValidationErr(true);
-      setTimeout(() => setValidationErr(false), 3000);
       showToast('error', '少なくとも1つのフィールドを入力してください');
       return;
     }
-    setValidationErr(false);
+
+    if (!hasValidPair(form, validation)) {
+      showToast('error', 'すべての必須フィールドが有効な形式である必要があります');
+      return;
+    }
+
+    setIsSaving(true);
     try {
+      // Run connection checks
+      await checkConnection();
+
+      // Save to localStorage
       saveStorage(form);
-      showToast('success', '設定を更新しました');
+      showToast('success', '設定を更新・確認しました');
     } catch {
       showToast('error', '保存に失敗しました');
+    } finally {
+      setIsSaving(false);
     }
-  }, [form, showToast]);
+  }, [form, validation, checkConnection, showToast]);
 
   const handleClearAll = useCallback(() => {
     try {
       Object.values(LS).forEach((k) => localStorage.removeItem(k));
     } catch { /* ignore */ }
-    setForm({ supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '' });
+    const cleared = { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '' };
+    setForm(cleared);
+    setValidation(computeValidation(cleared));
+    setConnStatus({ supabase: 'idle', azure: 'idle', gemini: 'idle' });
   }, []);
 
   const hasAnyValue = !allEmpty(form);
+  const isSaveDisabled = isSaving || !hasValidPair(form, validation);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -449,19 +725,28 @@ export function SettingsPage() {
           iconBorder="rgba(96,165,250,0.40)"
           iconColor="#93c5fd"
         />
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <FieldLabel label="NEXT_PUBLIC_SUPABASE_URL" hint="プロジェクトのエンドポイント" />
+            <FieldLabelWithLink
+              label="NEXT_PUBLIC_SUPABASE_URL"
+              helpText={API_CONFIG.supabase.helpTexts.url}
+              externalUrl={API_CONFIG.supabase.url}
+            />
             <TextInput
               id="supabase-url"
               type="url"
               value={form.supabaseUrl}
               onChange={field('supabaseUrl')}
               placeholder="https://xxxxxxxxxxxx.supabase.co"
+              validationState={validation.supabaseUrl}
             />
           </div>
           <div>
-            <FieldLabel label="NEXT_PUBLIC_SUPABASE_ANON_KEY" hint="公開用 JWT キー" />
+            <FieldLabelWithLink
+              label="NEXT_PUBLIC_SUPABASE_ANON_KEY"
+              helpText={API_CONFIG.supabase.helpTexts.anonKey}
+              externalUrl={API_CONFIG.supabase.url}
+            />
             <SecretInput
               id="supabase-anon"
               value={form.supabaseAnonKey}
@@ -469,7 +754,13 @@ export function SettingsPage() {
               placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
               visible={vis.supabaseAnonKey}
               onToggle={() => toggleVis('supabaseAnonKey')}
+              validationState={validation.supabaseAnonKey}
             />
+            {validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid' && (
+              <div style={{ marginTop: '8px' }}>
+                <ConnectionIndicator status={connStatus.supabase} label="Supabase に接続済み" />
+              </div>
+            )}
           </div>
         </div>
       </SectionCard>
@@ -490,19 +781,28 @@ export function SettingsPage() {
           iconBorder="rgba(251,191,36,0.38)"
           iconColor="#fcd34d"
         />
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <FieldLabel label="AZURE_OCR_ENDPOINT" hint="Azure: 名刺の文字読み取りに使用" />
+            <FieldLabelWithLink
+              label="AZURE_OCR_ENDPOINT"
+              helpText={API_CONFIG.azure.helpTexts.endpoint}
+              externalUrl={API_CONFIG.azure.url}
+            />
             <TextInput
               id="azure-endpoint"
               type="url"
               value={form.azureEndpoint}
               onChange={field('azureEndpoint')}
               placeholder="https://your-resource.cognitiveservices.azure.com/"
+              validationState={validation.azureEndpoint}
             />
           </div>
           <div>
-            <FieldLabel label="AZURE_OCR_KEY" hint="Azure ポータルで発行するサブスクリプションキー" />
+            <FieldLabelWithLink
+              label="AZURE_OCR_KEY"
+              helpText={API_CONFIG.azure.helpTexts.key}
+              externalUrl={API_CONFIG.azure.url}
+            />
             <SecretInput
               id="azure-key"
               value={form.azureKey}
@@ -510,28 +810,25 @@ export function SettingsPage() {
               placeholder="32文字の英数字キー..."
               visible={vis.azureKey}
               onToggle={() => toggleVis('azureKey')}
+              validationState={validation.azureKey}
             />
+            {validation.azureEndpoint === 'valid' && validation.azureKey === 'valid' && (
+              <div style={{ marginTop: '8px' }}>
+                <ConnectionIndicator status={connStatus.azure} label="Azure に接続済み" />
+              </div>
+            )}
           </div>
           <div>
-            <FieldLabel label="AZURE_OCR_REGION" hint="データの処理場所 — 日本国内処理を推奨" />
+            <FieldLabelWithLink
+              label="AZURE_OCR_REGION"
+              helpText={API_CONFIG.azure.helpTexts.region}
+            />
             <SelectInput
               id="azure-region"
               value={form.azureRegion}
               onChange={field('azureRegion')}
               options={AZURE_REGIONS}
             />
-            <p style={{
-              marginTop: '6px',
-              fontSize: '10px',
-              color: 'rgba(255,255,255,0.30)',
-              lineHeight: '1.6',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '5px',
-            }}>
-              <span style={{ color: 'rgba(251,191,36,0.60)', flexShrink: 0 }}>✦</span>
-              データの処理場所を決定します。日本国内での処理を推奨します。
-            </p>
           </div>
         </div>
       </SectionCard>
@@ -552,16 +849,28 @@ export function SettingsPage() {
           iconBorder="rgba(167,139,250,0.38)"
           iconColor="#c4b5fd"
         />
-        <div style={{ padding: '16px 18px' }}>
-          <FieldLabel label="GEMINI_API_KEY" hint="Google AI Studio で発行・無料枠あり" />
-          <SecretInput
-            id="gemini-key"
-            value={form.geminiKey}
-            onChange={field('geminiKey')}
-            placeholder="AIza..."
-            visible={vis.geminiKey}
-            onToggle={() => toggleVis('geminiKey')}
-          />
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <FieldLabelWithLink
+              label="GEMINI_API_KEY"
+              helpText={API_CONFIG.gemini.helpTexts.key}
+              externalUrl={API_CONFIG.gemini.url}
+            />
+            <SecretInput
+              id="gemini-key"
+              value={form.geminiKey}
+              onChange={field('geminiKey')}
+              placeholder="AIza..."
+              visible={vis.geminiKey}
+              onToggle={() => toggleVis('geminiKey')}
+              validationState={validation.geminiKey}
+            />
+            {validation.geminiKey === 'valid' && (
+              <div style={{ marginTop: '8px' }}>
+                <ConnectionIndicator status={connStatus.gemini} label="Gemini に接続済み" />
+              </div>
+            )}
+          </div>
         </div>
       </SectionCard>
 
@@ -585,56 +894,50 @@ export function SettingsPage() {
         </p>
       </motion.div>
 
-      {/* ═══ Validation error ═══ */}
-      <AnimatePresence>
-        {validationErr && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              background: 'rgba(239,68,68,0.10)',
-              border: '1px solid rgba(239,68,68,0.30)',
-              borderRadius: '10px', padding: '10px 13px',
-            }}
-          >
-            <AlertTriangle style={{ width: '14px', height: '14px', color: '#f87171', flexShrink: 0 }} />
-            <p style={{ fontSize: '12px', color: '#fca5a5' }}>
-              少なくとも1つのフィールドを入力してから保存してください。
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ═══ Save Button ═══ */}
       <motion.button
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.20, duration: 0.24 }}
-        whileHover={hasAnyValue ? { scale: 1.01, boxShadow: '0 8px 28px rgba(6,182,212,0.40)' } : {}}
-        whileTap={hasAnyValue ? { scale: 0.97 } : {}}
+        whileHover={!isSaveDisabled ? { scale: 1.01, boxShadow: '0 8px 28px rgba(6,182,212,0.40)' } : {}}
+        whileTap={!isSaveDisabled ? { scale: 0.97 } : {}}
         onClick={handleSave}
+        disabled={isSaveDisabled}
         style={{
           width: '100%',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           padding: '13px 16px',
-          background: hasAnyValue
+          background: !isSaveDisabled
             ? 'linear-gradient(135deg, #2563eb 0%, #0ea5e9 60%, #06b6d4 100%)'
             : 'rgba(255,255,255,0.05)',
-          border: hasAnyValue
+          border: !isSaveDisabled
             ? '1px solid rgba(6,182,212,0.45)'
             : '1px solid rgba(255,255,255,0.08)',
           borderRadius: '14px',
-          color: hasAnyValue ? '#ffffff' : 'rgba(255,255,255,0.25)',
+          color: !isSaveDisabled ? '#ffffff' : 'rgba(255,255,255,0.25)',
           fontSize: '14px', fontWeight: 700,
-          cursor: 'pointer',
-          boxShadow: hasAnyValue ? '0 4px 20px rgba(6,182,212,0.28)' : 'none',
+          cursor: isSaveDisabled ? 'not-allowed' : 'pointer',
+          boxShadow: !isSaveDisabled ? '0 4px 20px rgba(6,182,212,0.28)' : 'none',
           transition: 'all 0.2s ease',
+          opacity: isSaveDisabled ? 0.6 : 1,
         }}
       >
-        <Save style={{ width: '15px', height: '15px' }} />
-        全設定を保存
+        {isSaving ? (
+          <>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            >
+              <Loader style={{ width: '15px', height: '15px' }} />
+            </motion.div>
+            確認中...
+          </>
+        ) : (
+          <>
+            <Save style={{ width: '15px', height: '15px' }} />
+            全設定を保存・確認
+          </>
+        )}
       </motion.button>
 
       {/* ═══ Guide Buttons ═══ */}
