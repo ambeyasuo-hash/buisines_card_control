@@ -4,8 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
-  Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader,
+  Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
 } from 'lucide-react';
+import {
+  checkSupabaseConnection,
+  checkAzureConnection,
+  checkGeminiConnection,
+  type ConnectionResult,
+} from '@/lib/check-connection';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -87,6 +93,7 @@ interface FormState {
 type ValidationState = Record<keyof FormState, 'valid' | 'invalid' | 'empty'>;
 type VisibilityState = Record<'supabaseAnonKey' | 'azureKey' | 'geminiKey', boolean>;
 type ConnectionStatus = Record<'supabase' | 'azure' | 'gemini', 'idle' | 'checking' | 'success' | 'error'>;
+type TestStatus = Record<'supabase' | 'azure' | 'gemini', 'idle' | 'testing' | 'success' | 'error'>;
 type ToastType = 'success' | 'error';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -521,6 +528,115 @@ function ConnectionIndicator({
   );
 }
 
+/** Test Button */
+function TestButton({
+  onClick,
+  status,
+  disabled,
+}: {
+  onClick: () => void;
+  status: 'idle' | 'testing' | 'success' | 'error';
+  disabled?: boolean;
+}) {
+  return (
+    <motion.button
+      whileHover={!disabled ? { scale: 1.05 } : {}}
+      whileTap={!disabled ? { scale: 0.93 } : {}}
+      onClick={onClick}
+      disabled={disabled || status === 'testing'}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '5px',
+        padding: '6px 11px',
+        borderRadius: '8px',
+        background:
+          status === 'success'
+            ? 'rgba(16,185,129,0.20)'
+            : status === 'error'
+              ? 'rgba(239,68,68,0.15)'
+              : 'rgba(99,102,241,0.20)',
+        border:
+          status === 'success'
+            ? '1px solid rgba(52,211,153,0.35)'
+            : status === 'error'
+              ? '1px solid rgba(248,113,113,0.30)'
+              : '1px solid rgba(165,180,252,0.35)',
+        color:
+          status === 'success'
+            ? '#6ee7b7'
+            : status === 'error'
+              ? '#fca5a5'
+              : '#a5b4fc',
+        fontSize: '12px',
+        fontWeight: 500,
+        cursor: disabled || status === 'testing' ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'all 0.15s ease',
+      }}
+    >
+      {status === 'testing' ? (
+        <>
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+            <Loader style={{ width: '13px', height: '13px' }} />
+          </motion.div>
+          テスト中...
+        </>
+      ) : status === 'success' ? (
+        <>
+          <Check style={{ width: '13px', height: '13px' }} strokeWidth={2.5} />
+          成功
+        </>
+      ) : status === 'error' ? (
+        <>
+          <AlertCircle style={{ width: '13px', height: '13px' }} strokeWidth={2} />
+          失敗
+        </>
+      ) : (
+        <>
+          <TestTube style={{ width: '13px', height: '13px' }} strokeWidth={2} />
+          テスト
+        </>
+      )}
+    </motion.button>
+  );
+}
+
+/** Test Result Message */
+function TestResult({ result, show }: { result: ConnectionResult; show: boolean }) {
+  if (!show) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{
+        marginTop: '8px',
+        padding: '9px 11px',
+        borderRadius: '8px',
+        background: result.ok ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)',
+        border: result.ok ? '1px solid rgba(52,211,153,0.28)' : '1px solid rgba(248,113,113,0.28)',
+        display: 'flex',
+        gap: '8px',
+        alignItems: 'flex-start',
+      }}
+    >
+      <div style={{ flexShrink: 0, marginTop: '1px' }}>
+        {result.ok ? (
+          <Check style={{ width: '14px', height: '14px', color: '#10b981' }} strokeWidth={2.5} />
+        ) : (
+          <AlertCircle style={{ width: '14px', height: '14px', color: '#ef4444' }} strokeWidth={2} />
+        )}
+      </div>
+      <p style={{ fontSize: '11px', color: result.ok ? '#6ee7b7' : '#fca5a5', lineHeight: '1.5' }}>
+        {result.message}
+      </p>
+    </motion.div>
+  );
+}
+
 /** Section header row */
 function SectionHeader({
   icon: Icon,
@@ -575,6 +691,14 @@ export function SettingsPage() {
   const [connStatus, setConnStatus] = useState<ConnectionStatus>({
     supabase: 'idle', azure: 'idle', gemini: 'idle',
   });
+  const [testStatus, setTestStatus] = useState<TestStatus>({
+    supabase: 'idle', azure: 'idle', gemini: 'idle',
+  });
+  const [testMessages, setTestMessages] = useState<Record<string, ConnectionResult>>({
+    supabase: { ok: false, message: '' },
+    azure: { ok: false, message: '' },
+    gemini: { ok: false, message: '' },
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast]     = useState<{ type: ToastType; message: string } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
@@ -608,6 +732,47 @@ export function SettingsPage() {
     setTimeout(() => setToastVisible(false), 2600);
   }, []);
 
+  // ── Individual test functions (invoked on button click) ──
+  const testSupabase = useCallback(async () => {
+    setTestStatus((s) => ({ ...s, supabase: 'testing' }));
+    try {
+      const result = await checkSupabaseConnection(form.supabaseUrl, form.supabaseAnonKey);
+      setTestMessages((m) => ({ ...m, supabase: result }));
+      setTestStatus((s) => ({ ...s, supabase: result.ok ? 'success' : 'error' }));
+    } catch (err) {
+      const result = { ok: false, message: `エラー: ${String(err)}` };
+      setTestMessages((m) => ({ ...m, supabase: result }));
+      setTestStatus((s) => ({ ...s, supabase: 'error' }));
+    }
+  }, [form]);
+
+  const testAzure = useCallback(async () => {
+    setTestStatus((s) => ({ ...s, azure: 'testing' }));
+    try {
+      const result = await checkAzureConnection(form.azureEndpoint, form.azureKey);
+      setTestMessages((m) => ({ ...m, azure: result }));
+      setTestStatus((s) => ({ ...s, azure: result.ok ? 'success' : 'error' }));
+    } catch (err) {
+      const result = { ok: false, message: `エラー: ${String(err)}` };
+      setTestMessages((m) => ({ ...m, azure: result }));
+      setTestStatus((s) => ({ ...s, azure: 'error' }));
+    }
+  }, [form]);
+
+  const testGemini = useCallback(async () => {
+    setTestStatus((s) => ({ ...s, gemini: 'testing' }));
+    try {
+      const result = await checkGeminiConnection(form.geminiKey);
+      setTestMessages((m) => ({ ...m, gemini: result }));
+      setTestStatus((s) => ({ ...s, gemini: result.ok ? 'success' : 'error' }));
+    } catch (err) {
+      const result = { ok: false, message: `エラー: ${String(err)}` };
+      setTestMessages((m) => ({ ...m, gemini: result }));
+      setTestStatus((s) => ({ ...s, gemini: 'error' }));
+    }
+  }, [form]);
+
+  // ── Check all connections on save (existing logic) ──
   const checkConnection = useCallback(async () => {
     setConnStatus({ supabase: 'idle', azure: 'idle', gemini: 'idle' });
 
@@ -615,11 +780,8 @@ export function SettingsPage() {
     if (validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid') {
       setConnStatus((s) => ({ ...s, supabase: 'checking' }));
       try {
-        // Minimal supabase-js check (URL sanity)
-        const response = await fetch(`${form.supabaseUrl.trim()}/auth/v1/user`, {
-          headers: { Authorization: `Bearer ${form.supabaseAnonKey.trim()}` },
-        });
-        setConnStatus((s) => ({ ...s, supabase: response.ok || response.status === 401 ? 'success' : 'error' }));
+        const result = await checkSupabaseConnection(form.supabaseUrl, form.supabaseAnonKey);
+        setConnStatus((s) => ({ ...s, supabase: result.ok ? 'success' : 'error' }));
       } catch {
         setConnStatus((s) => ({ ...s, supabase: 'error' }));
       }
@@ -629,35 +791,19 @@ export function SettingsPage() {
     if (validation.azureEndpoint === 'valid' && validation.azureKey === 'valid') {
       setConnStatus((s) => ({ ...s, azure: 'checking' }));
       try {
-        const response = await fetch(`${form.azureEndpoint.trim()}/vision/v3.2/read`, {
-          method: 'HEAD',
-          headers: { 'Ocp-Apim-Subscription-Key': form.azureKey.trim() },
-        });
-        setConnStatus((s) => ({ ...s, azure: response.ok || response.status === 401 ? 'success' : 'error' }));
+        const result = await checkAzureConnection(form.azureEndpoint, form.azureKey);
+        setConnStatus((s) => ({ ...s, azure: result.ok ? 'success' : 'error' }));
       } catch {
         setConnStatus((s) => ({ ...s, azure: 'error' }));
       }
     }
 
-    // Gemini check (minimal API call)
+    // Gemini check
     if (validation.geminiKey === 'valid') {
       setConnStatus((s) => ({ ...s, gemini: 'checking' }));
       try {
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'hello' }] }],
-            safetySettings: [],
-            generationConfig: { maxOutputTokens: 1 },
-          }),
-          signal: AbortSignal.timeout(5000),
-        });
-        const url = new URL(response.url);
-        url.searchParams.set('key', form.geminiKey.trim());
-        setConnStatus((s) => ({ ...s, gemini: response.ok || response.status === 400 ? 'success' : 'error' }));
+        const result = await checkGeminiConnection(form.geminiKey);
+        setConnStatus((s) => ({ ...s, gemini: result.ok ? 'success' : 'error' }));
       } catch {
         setConnStatus((s) => ({ ...s, gemini: 'error' }));
       }
@@ -756,11 +902,17 @@ export function SettingsPage() {
               onToggle={() => toggleVis('supabaseAnonKey')}
               validationState={validation.supabaseAnonKey}
             />
-            {validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid' && (
-              <div style={{ marginTop: '8px' }}>
-                <ConnectionIndicator status={connStatus.supabase} label="Supabase に接続済み" />
-              </div>
-            )}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+              <TestButton
+                onClick={testSupabase}
+                status={testStatus.supabase}
+                disabled={validation.supabaseUrl !== 'valid' || validation.supabaseAnonKey !== 'valid'}
+              />
+              {validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid' && (
+                <ConnectionIndicator status={connStatus.supabase} label="保存時に確認済み" />
+              )}
+            </div>
+            <TestResult result={testMessages.supabase} show={testStatus.supabase !== 'idle'} />
           </div>
         </div>
       </SectionCard>
@@ -812,11 +964,17 @@ export function SettingsPage() {
               onToggle={() => toggleVis('azureKey')}
               validationState={validation.azureKey}
             />
-            {validation.azureEndpoint === 'valid' && validation.azureKey === 'valid' && (
-              <div style={{ marginTop: '8px' }}>
-                <ConnectionIndicator status={connStatus.azure} label="Azure に接続済み" />
-              </div>
-            )}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+              <TestButton
+                onClick={testAzure}
+                status={testStatus.azure}
+                disabled={validation.azureEndpoint !== 'valid' || validation.azureKey !== 'valid'}
+              />
+              {validation.azureEndpoint === 'valid' && validation.azureKey === 'valid' && (
+                <ConnectionIndicator status={connStatus.azure} label="保存時に確認済み" />
+              )}
+            </div>
+            <TestResult result={testMessages.azure} show={testStatus.azure !== 'idle'} />
           </div>
           <div>
             <FieldLabelWithLink
@@ -865,11 +1023,17 @@ export function SettingsPage() {
               onToggle={() => toggleVis('geminiKey')}
               validationState={validation.geminiKey}
             />
-            {validation.geminiKey === 'valid' && (
-              <div style={{ marginTop: '8px' }}>
-                <ConnectionIndicator status={connStatus.gemini} label="Gemini に接続済み" />
-              </div>
-            )}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+              <TestButton
+                onClick={testGemini}
+                status={testStatus.gemini}
+                disabled={validation.geminiKey !== 'valid'}
+              />
+              {validation.geminiKey === 'valid' && (
+                <ConnectionIndicator status={connStatus.gemini} label="保存時に確認済み" />
+              )}
+            </div>
+            <TestResult result={testMessages.gemini} show={testStatus.gemini !== 'idle'} />
           </div>
         </div>
       </SectionCard>
