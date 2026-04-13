@@ -124,7 +124,7 @@ export async function POST(request: Request): Promise<Response> {
     // Document Intelligence: prebuilt-read モデルで OCR
     const analyzeUrl =
       `${endpoint}/documentintelligence/document-models/prebuilt-read:analyze` +
-      `?api-version=2024-02-29-preview&locale=ja-JP`;
+      `?api-version=2023-10-31-preview&locale=ja-JP`;
 
     const submitRes = await fetch(analyzeUrl, {
       method: 'POST',

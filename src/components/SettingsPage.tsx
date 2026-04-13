@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import {
   checkSupabaseConnection,
-  checkAzureConnection,
   checkAzureConnectionViaServer,
   checkGeminiConnection,
   type ConnectionResult,

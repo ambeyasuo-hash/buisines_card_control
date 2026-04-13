@@ -49,10 +49,10 @@ export async function POST(request: Request): Promise<Response> {
     console.log('[Azure Test] Testing endpoint:', baseUrl);
 
     // Azure Document Intelligence への POST リクエスト
-    // 最新 → 安定版 → 旧名称 の順で試す
+    // 複数の API バージョンを試す
     const paths = [
-      '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2024-02-29-preview',
       '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-10-31-preview',
+      '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-07-31-preview',
       '/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31',
     ];
 
@@ -70,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
           method: 'POST',
           headers: {
             'Ocp-Apim-Subscription-Key': apiKey.trim(),
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': 'image/jpeg',
           },
           // 無効な JPEG ヘッダーを送信（エンドポイント存在確認用）
           body: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
