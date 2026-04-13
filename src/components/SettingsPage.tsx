@@ -79,7 +79,9 @@ function validateAzureEndpoint(endpoint: string): boolean {
 }
 
 function validateAzureKey(key: string): boolean {
-  return /^[a-zA-Z0-9]{32}$/.test(key.trim());
+  // Azure keys are Base64 strings, typically 32+ characters
+  // Allow alphanumeric + Base64 special chars (=, +, /)
+  return key.trim().length >= 30;
 }
 
 function validateGeminiKey(key: string): boolean {
