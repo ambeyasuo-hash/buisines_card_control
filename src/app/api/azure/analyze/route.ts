@@ -121,22 +121,31 @@ export async function POST(request: Request): Promise<Response> {
 
     const imageBuffer = base64ToArrayBuffer(imageBase64);
 
-    // Document Intelligence: prebuilt-read モデルで OCR
-    const analyzeUrl =
-      `${endpoint}/documentintelligence/document-models/prebuilt-read:analyze` +
-      `?api-version=2023-10-31-preview`;
+    // 新旧両方の API パスを試す
+    // リソースの種類によって対応するパスが異なるため順番に試行
+    const analyzePaths = [
+      // 旧 Form Recognizer（接続テストで実際に成功確認済み）
+      `${endpoint}/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31`,
+      // 新 Document Intelligence（新規リソース向け）
+      `${endpoint}/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-10-31-preview`,
+    ];
 
-    const submitRes = await fetch(analyzeUrl, {
-      method: 'POST',
-      headers: {
-        'Ocp-Apim-Subscription-Key': apiKey,
-        'Content-Type': 'image/jpeg',
-      },
-      body: imageBuffer,
-    });
+    let submitRes: Response | null = null;
+    let lastStatus = 0;
 
-    if (!submitRes.ok) {
-      if (submitRes.status === 401 || submitRes.status === 403) {
+    for (const analyzeUrl of analyzePaths) {
+      const res = await fetch(analyzeUrl, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': apiKey,
+          'Content-Type': 'image/jpeg',
+        },
+        body: imageBuffer,
+      });
+
+      lastStatus = res.status;
+
+      if (res.status === 401 || res.status === 403) {
         return Response.json(
           {
             ok: false,
@@ -148,22 +157,30 @@ export async function POST(request: Request): Promise<Response> {
         );
       }
 
-      if (submitRes.status === 404) {
+      if (res.status !== 404) {
+        // 202 Accepted または 400 以外の場合はこのパスを採用
+        submitRes = res;
+        break;
+      }
+      // 404 なら次のパスを試す
+    }
+
+    if (!submitRes || !submitRes.ok) {
+      if (lastStatus === 404) {
         return Response.json(
           {
             ok: false,
             error:
-              'Azure Document Intelligence のエンドポイントが見つかりません。\n\n' +
+              'Azure のエンドポイントが見つかりません。\n\n' +
               '設定画面でエンドポイント URL を確認してください。',
           } as AnalyzeResponse,
           { status: 200 },
         );
       }
-
       return Response.json(
         {
           ok: false,
-          error: `Azure へのリクエストに失敗しました（HTTP ${submitRes.status}）`,
+          error: `Azure へのリクエストに失敗しました（HTTP ${lastStatus}）`,
         } as AnalyzeResponse,
         { status: 200 },
       );
