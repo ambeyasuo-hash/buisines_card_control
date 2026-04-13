@@ -1,7 +1,12 @@
 /**
- * Server-side Azure OCR endpoint validator
+ * Server-side Azure Document Intelligence endpoint validator
+ * Tests Document Intelligence (Form Recognizer) API connectivity
  * Avoids CORS issues by testing from backend
  * POST /api/test-azure { endpoint, apiKey }
+ *
+ * Supports endpoints:
+ * - https://{region}.cognitiveservices.azure.com
+ * - https://{region}.api.cognitive.microsoft.com
  */
 
 export async function POST(request: Request) {
@@ -25,8 +30,11 @@ export async function POST(request: Request) {
     }
     baseUrl = baseUrl.replace(/\/$/, '');
 
-    // Test with minimal invalid image (server-side, no CORS)
-    const testUrl = `${baseUrl}/vision/v3.2/read/analyze?language=ja`;
+    // Test with Document Intelligence endpoint (Form Recognizer API)
+    // Supports both formats:
+    //   - https://{region}.api.cognitive.microsoft.com/
+    //   - https://{resourceName}.cognitiveservices.azure.com/
+    const testUrl = `${baseUrl}/documentintelligence/document-models/prebuilt-read:analyze?api-version=2024-02-29-preview`;
 
     const response = await fetch(testUrl, {
       method: 'POST',
@@ -56,7 +64,13 @@ export async function POST(request: Request) {
 
     if (response.status === 404) {
       return Response.json(
-        { ok: false, message: 'Azure エンドポイントが見つかりません。\n\n設定されているエンドポイント URL が正しいか確認してください。' },
+        {
+          ok: false,
+          message: 'Document Intelligence エンドポイントが見つかりません。\n\n以下を確認してください：\n' +
+            '1. リソースの種類が「Document Intelligence」になっているか\n' +
+            '2. エンドポイント URL が正しく入力されているか\n' +
+            '（例：https://japaneast.cognitiveservices.azure.com）',
+        },
         { status: 200 },
       );
     }
