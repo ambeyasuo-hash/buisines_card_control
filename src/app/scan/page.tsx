@@ -94,21 +94,45 @@ export default function ScanPage() {
   const [capturePayload, setCapturePayload] = useState<CapturePayload | null>(null);
   const [frontResult,    setFrontResult]    = useState<OcrResult | null>(null);
   const [backNotes,      setBackNotes]      = useState<string | null>(null);
+  const [isSaving,       setIsSaving]       = useState(false);
+  const [saveError,      setSaveError]      = useState<string | null>(null);
 
   // ── 1. Orientation lock & monitoring ─────────────────────────────────────
+
+  /**
+   * scanState に応じて orientation lock を動的制御
+   * - scanning 中のみ横持ちを強制 (lock)
+   * - 撮影完了後 (preview/analyzing/result) は自由な向きを許可 (unlock)
+   * - PortraitWarning は常時表示（情報提示のため）
+   */
   useEffect(() => {
-    // iOS は lock 非サポートのため try/catch で安全に処理
-    if (typeof screen !== 'undefined' && screen.orientation && 'lock' in screen.orientation) {
-      (screen.orientation as ScreenOrientation & { lock: (o: string) => Promise<void> })
-        .lock('landscape')
-        .catch(() => { /* silently ignore — iOS/一部ブラウザ非対応 */ });
-    }
-    return () => {
+    if (typeof screen === 'undefined' || !screen.orientation) return;
+
+    const attemptLockUnlock = async () => {
       try {
-        if (typeof screen !== 'undefined' && screen.orientation && 'unlock' in screen.orientation) {
+        if (scanState === 'scanning') {
+          // 撮影中のみ横持ちを強制
+          await (screen.orientation as ScreenOrientation & { lock: (o: string) => Promise<void> }).lock('landscape');
+        } else {
+          // 撮影完了後は自由な向きを許可
           screen.orientation.unlock();
         }
-      } catch { /* ignore */ }
+      } catch {
+        // iOS など lock/unlock 非対応ブラウザは無視
+      }
+    };
+
+    attemptLockUnlock();
+  }, [scanState]);
+
+  useEffect(() => {
+    const check = () => setIsPortrait(window.innerWidth < window.innerHeight);
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
     };
   }, []);
 
@@ -346,6 +370,53 @@ export default function ScanPage() {
 
     setScanState('result');
   }, [capturePayload, scanPhase]);
+
+  // ── 4b. Save to Supabase ──────────────────────────────────────────────────
+  /**
+   * 撮影結果（表面・裏面統合）を Supabase の business_cards テーブルに保存
+   */
+  const handleSave = useCallback(async () => {
+    if (!frontResult || isSaving) return;
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const res = await fetch('/api/save-business-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:      frontResult.name ?? undefined,
+          company:   frontResult.company ?? undefined,
+          title:     frontResult.title ?? undefined,
+          email:     frontResult.email ?? undefined,
+          tel:       frontResult.tel ?? undefined,
+          address:   frontResult.address ?? undefined,
+          notes:     backNotes ?? undefined,
+          raw:       frontResult.raw ?? undefined,
+          thumbnail: thumbnail ?? undefined,
+          scannedAt: new Date().toISOString(),
+        }),
+      });
+
+      const data = await res.json() as {
+        ok: boolean;
+        id?: string;
+        error?: string;
+      };
+
+      if (data.ok && data.id) {
+        // 保存成功 → ホームに遷移
+        router.push('/');
+      } else {
+        setSaveError(data.error ?? '保存に失敗しました。もう一度お試しください。');
+      }
+    } catch (e) {
+      setSaveError(`通信エラー: ${String(e)}`);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [frontResult, backNotes, thumbnail, isSaving, router]);
 
   // ── 5. State transitions ──────────────────────────────────────────────────
 
@@ -585,6 +656,9 @@ export default function ScanPage() {
                 backNotes={backNotes}
                 thumbnail={thumbnail}
                 scanPhase={scanPhase}
+                onSave={handleSave}
+                isSaving={isSaving}
+                saveError={saveError}
               />
             </motion.div>
           )}
@@ -746,12 +820,15 @@ export default function ScanPage() {
 // ─── ResultContent ────────────────────────────────────────────────────────────
 
 function ResultContent({
-  frontResult, backNotes, thumbnail, scanPhase,
+  frontResult, backNotes, thumbnail, scanPhase, onSave, isSaving, saveError,
 }: {
   frontResult: OcrResult | null;
   backNotes:   string | null;
   thumbnail:   string | null;
   scanPhase:   ScanPhase;
+  onSave:      () => void;
+  isSaving:    boolean;
+  saveError:   string | null;
 }) {
   // エラー表示
   const hasError = frontResult?.error || (scanPhase === 'back' && backNotes?.startsWith('(エラー)'));
@@ -838,6 +915,70 @@ function ResultContent({
             {frontResult.raw}
           </pre>
         </details>
+      )}
+
+      {/* 保存エラー表示 */}
+      {saveError && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: 12, padding: '12px 14px', display: 'flex', gap: 10 }}
+        >
+          <AlertCircle style={{ color: '#f87171', width: 16, height: 16, flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#fca5a5', marginBottom: 4 }}>保存エラー</p>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 1.6 }}>{saveError}</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* 保存ボタン (frontResult が成功している場合に表示) */}
+      {!frontResult?.error && (
+        <motion.button
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+          whileHover={!isSaving ? { scale: 1.02, boxShadow: '0 8px 28px rgba(16,185,129,0.30)' } : {}}
+          whileTap={!isSaving ? { scale: 0.97 } : {}}
+          onClick={onSave}
+          disabled={isSaving}
+          style={{
+            width: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            padding: '13px 16px',
+            background: !isSaving
+              ? 'linear-gradient(135deg, rgba(16,185,129,0.55), rgba(5,150,105,0.40))'
+              : 'rgba(16,185,129,0.25)',
+            border: !isSaving
+              ? '1px solid rgba(52,211,153,0.45)'
+              : '1px solid rgba(52,211,153,0.25)',
+            borderRadius: 14,
+            color: !isSaving ? '#a7f3d0' : 'rgba(167,243,208,0.5)',
+            fontSize: 14, fontWeight: 700,
+            cursor: isSaving ? 'not-allowed' : 'pointer',
+            boxShadow: !isSaving ? '0 4px 20px rgba(16,185,129,0.20)' : 'none',
+            transition: 'all 0.2s ease',
+            opacity: isSaving ? 0.8 : 1,
+          }}
+        >
+          {isSaving ? (
+            <>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+              >
+                <ScanLine style={{ width: 16, height: 16 }} />
+              </motion.div>
+              保存中...
+            </>
+          ) : (
+            <>
+              <Check style={{ width: 16, height: 16 }} strokeWidth={2.5} />
+              保存して完了
+            </>
+          )}
+        </motion.button>
       )}
     </div>
   );

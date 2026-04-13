@@ -110,8 +110,10 @@ async function preprocessImage(base64: string, crop?: CropRegion): Promise<Array
     });
   }
 
-  // コントラスト・シャープネス最適化
+  // コントラスト・シャープネス最適化 + EXIF 向き補正
   const outputBuf = await pipeline
+    .withMetadata()                  // EXIF メタデータ保持 (向き情報含む)
+    .rotate()                        // EXIF 向き情報に基づいて自動回転
     .normalize()                     // ヒストグラム正規化 → コントラスト自動補正
     .sharpen({ sigma: 0.9 })         // エッジシャープネス (文字の輪郭強調)
     .modulate({ brightness: 1.04 })  // 微細な輝度補正
