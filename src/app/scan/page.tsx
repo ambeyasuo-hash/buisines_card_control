@@ -43,7 +43,7 @@ async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
   const apiKey   = localStorage.getItem(LS_AZURE.key)?.trim()      ?? '';
 
   if (!endpoint || !apiKey) {
-    return { error: 'Azure OCR の設定が未入力です。設定画面から入力してください。' };
+    return { error: '名刺読み取りの設定が完了していません。\n\n設定画面でAzure OCRのエンドポイントとAPIキーを入力してください。' };
   }
 
   // Base64 → Blob
@@ -61,8 +61,13 @@ async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
   });
 
   if (!submitRes.ok) {
-    const msg = await submitRes.text();
-    return { error: `Azure API エラー (${submitRes.status}): ${msg}` };
+    if (submitRes.status === 401 || submitRes.status === 403) {
+      return { error: '名刺の読み取りに失敗しました。\n\nAPIキーが正しくないか、Azure リソースの権限設定に問題がある可能性があります。\n設定画面でAPIキーを確認してください。' };
+    }
+    if (submitRes.status === 400) {
+      return { error: '名刺の読み取りに失敗しました。\n\n画像がぼやけているか、反射していないか確認してください。\n光の反射を抑えて、もう少し近づけて撮影してみてください。' };
+    }
+    return { error: `名刺の読み取りサービスが一時的に利用できません（エラー: ${submitRes.status}）。\n\nしばらくしてからもう一度お試しください。` };
   }
 
   // Poll result
@@ -79,10 +84,12 @@ async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
       }
       return parseBusinessCard(lines);
     }
-    if (pollData.status === 'failed') return { error: 'OCR 解析に失敗しました。' };
+    if (pollData.status === 'failed') {
+      return { error: '名刺の読み取りに失敗しました。\n\n画像がぼやけているか、テキストが小さすぎないか確認してください。\n明るい場所で、光が反射しないよう調整して、もう一度スキャンしてください。' };
+    }
   }
 
-  return { error: 'OCR がタイムアウトしました。再試行してください。' };
+  return { error: '名刺の読み取りに時間がかかりすぎました。\n\nインターネットの接続状況を確認して、もう一度お試しください。' };
 }
 
 // ─── Simple business card parser ──────────────────────────────────────────────
@@ -148,11 +155,13 @@ export default function ScanPage() {
         if (cancelled) return;
         const e = err as DOMException;
         if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-          setErrorMsg('カメラのアクセスが拒否されました。\nブラウザの設定からカメラ許可を有効にしてください。');
+          setErrorMsg('カメラの使用が許可されていないようです。\n\nブラウザの設定からカメラへのアクセスを許可してください。\nスマートフォンの場合は、設定アプリ > プライバシー > カメラ を確認してください。');
         } else if (e.name === 'NotFoundError') {
-          setErrorMsg('カメラが見つかりません。\nデバイスにカメラが接続されているか確認してください。');
+          setErrorMsg('このデバイスにカメラが接続されていません。\n\nUSBカメラを接続するか、カメラが搭載されているデバイスを使用してください。');
+        } else if (e.name === 'NotReadableError') {
+          setErrorMsg('カメラが他のアプリケーションで使用中です。\n\n別のアプリ（ビデオ通話など）を終了してから、もう一度お試しください。');
         } else {
-          setErrorMsg(`カメラの起動に失敗しました: ${e.message}`);
+          setErrorMsg(`カメラの起動中に問題が発生しました。\n\n時間をおいて、もう一度お試しください。\nそれでも解決しない場合はブラウザを再起動してください。`);
         }
         setScanState('ready');
       }

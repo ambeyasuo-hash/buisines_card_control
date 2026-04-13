@@ -10,6 +10,7 @@ import {
 import {
   checkSupabaseConnection,
   checkAzureConnection,
+  checkAzureConnectionViaServer,
   checkGeminiConnection,
   type ConnectionResult,
 } from '@/lib/check-connection';
@@ -925,7 +926,8 @@ export function SettingsPage() {
   const testAzure = useCallback(async () => {
     setTestStatus((s) => ({ ...s, azure: 'testing' }));
     try {
-      const result = await checkAzureConnection(form.azureEndpoint, form.azureKey);
+      // Use server-side test to avoid CORS issues
+      const result = await checkAzureConnectionViaServer(form.azureEndpoint, form.azureKey);
       setTestMessages((m) => ({ ...m, azure: result }));
       setTestStatus((s) => ({ ...s, azure: result.ok ? 'success' : 'error' }));
     } catch (err) {
@@ -963,11 +965,11 @@ export function SettingsPage() {
       }
     }
 
-    // Azure check
+    // Azure check (server-side to avoid CORS)
     if (validation.azureEndpoint === 'valid' && validation.azureKey === 'valid') {
       setConnStatus((s) => ({ ...s, azure: 'checking' }));
       try {
-        const result = await checkAzureConnection(form.azureEndpoint, form.azureKey);
+        const result = await checkAzureConnectionViaServer(form.azureEndpoint, form.azureKey);
         setConnStatus((s) => ({ ...s, azure: result.ok ? 'success' : 'error' }));
       } catch {
         setConnStatus((s) => ({ ...s, azure: 'error' }));

@@ -68,7 +68,8 @@ export async function checkSupabaseConnection(
 // ─── Azure OCR ────────────────────────────────────────────────────────────────
 /**
  * Test Azure Computer Vision endpoint
- * Sends HEAD request or minimal POST to validate endpoint
+ * Sends minimal POST with invalid image to check if endpoint is reachable
+ * Note: Azure Document Intelligence requires valid auth, so 401/400 = endpoint OK
  */
 export async function checkAzureConnection(
   endpoint: string,
@@ -79,71 +80,99 @@ export async function checkAzureConnection(
   }
 
   try {
-    const baseUrl = endpoint.trim().replace(/\/$/, ''); // Remove trailing slash
+    // Sanitize URL: ensure https:// prefix and remove trailing slash
+    let baseUrl = endpoint.trim();
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
+    baseUrl = baseUrl.replace(/\/$/, '');
 
-    // Try HEAD request first (minimal)
-    const headResponse = await fetch(`${baseUrl}/vision/v3.2/read`, {
-      method: 'HEAD',
+    // Try POST with minimal invalid image data
+    // Azure will return 400 (bad image) or 401 (bad key) both indicate endpoint is reachable
+    const testResponse = await fetch(`${baseUrl}/vision/v3.2/read/analyze?language=ja`, {
+      method: 'POST',
       headers: {
         'Ocp-Apim-Subscription-Key': apiKey.trim(),
+        'Content-Type': 'image/jpeg',
       },
+      body: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), // Minimal JPEG header
       mode: 'cors',
       credentials: 'omit',
     });
 
-    // HEAD success
-    if (headResponse.ok) {
+    // Interpret response codes
+    if (testResponse.ok) {
+      // Unlikely but possible if service accepts empty image
       return { ok: true, message: 'Azure に接続しました ✓' };
     }
 
-    // HEAD might not be supported, try POST with invalid body
-    if (headResponse.status === 405 || headResponse.status === 404) {
-      try {
-        const postResponse = await fetch(`${baseUrl}/vision/v3.2/read/analyze`, {
-          method: 'POST',
-          headers: {
-            'Ocp-Apim-Subscription-Key': apiKey.trim(),
-            'Content-Type': 'application/octet-stream',
-          },
-          body: new Uint8Array([0xff, 0xd8, 0xff]), // Invalid JPEG header (3 bytes)
-          mode: 'cors',
-          credentials: 'omit',
-        });
-
-        // 400 = Bad image, but endpoint reachable
-        if (postResponse.status === 400 || postResponse.status === 401 || postResponse.ok) {
-          return { ok: true, message: 'Azure に接続しました ✓' };
-        }
-
-        return {
-          ok: false,
-          message: `HTTP ${postResponse.status}: Azure エンドポイントに応答がありません`,
-          code: `AZURE_${postResponse.status}`,
-        };
-      } catch {
-        // POST also failed
-        return { ok: false, message: 'Azure エンドポイントに接続できません。URL を確認してください' };
-      }
+    if (testResponse.status === 400) {
+      // Bad image format = endpoint reachable, auth OK
+      return { ok: true, message: 'Azure に接続しました ✓' };
     }
 
-    // Endpoint is reachable but returns error
-    if (headResponse.status === 401 || headResponse.status === 403) {
-      return { ok: false, message: 'Azure API Key が無効です。キーを確認してください' };
+    if (testResponse.status === 401 || testResponse.status === 403) {
+      // Auth failed, but endpoint is reachable
+      return { ok: false, message: 'Azure API Key が無効です。\n\n設定画面で API Key を再度確認してください。' };
+    }
+
+    if (testResponse.status === 404) {
+      // Endpoint path wrong
+      return { ok: false, message: 'Azure エンドポイントが見つかりません。\n\n設定されているエンドポイント URL が正しいか確認してください。' };
+    }
+
+    if (testResponse.status >= 500) {
+      // Server error
+      return { ok: false, message: 'Azure サービスが一時的に利用できません。\n\nしばらく時間をおいてから、もう一度お試しください。' };
     }
 
     return {
       ok: false,
-      message: `HTTP ${headResponse.status}: ${headResponse.statusText}`,
-      code: `AZURE_${headResponse.status}`,
+      message: `Azure エンドポイントがエラーを返しました（HTTP ${testResponse.status}）。\n\nURL と API Key を確認してください。`,
+      code: `AZURE_${testResponse.status}`,
     };
   } catch (err) {
     const error = err as Error;
     if (error.message.includes('Failed to fetch')) {
-      return { ok: false, message: 'CORS エラー。Azure のリソースが正しく設定されているか確認してください' };
+      return { ok: false, message: 'ネットワーク接続エラー。\n\nエンドポイント URL が正しいか、インターネット接続が確立されているか確認してください。' };
     }
     if (error.message.includes('Invalid URL')) {
-      return { ok: false, message: 'エンドポイントの形式が不正です。https:// で始まっていますか？' };
+      // Auto-fix attempt
+      try {
+        new URL(`https://${endpoint.trim()}`);
+        return { ok: false, message: 'エンドポイントの形式が不正です。\n\nhttps:// プレフィックスなしで入力してください。' };
+      } catch {
+        return { ok: false, message: 'エンドポイントの形式が不正です。\n\n有効な URL を入力してください（例: your-resource.cognitiveservices.azure.com）。' };
+      }
     }
+    return { ok: false, message: `エラー: ${error.message}` };
+  }
+}
+
+// ─── Azure OCR (Server-side) ──────────────────────────────────────────────────
+/**
+ * Test Azure via Next.js Route Handler (avoids CORS)
+ * More reliable than client-side test
+ */
+export async function checkAzureConnectionViaServer(
+  endpoint: string,
+  apiKey: string,
+): Promise<ConnectionResult> {
+  if (!endpoint?.trim() || !apiKey?.trim()) {
+    return { ok: false, message: 'Azure Endpoint と API Key を入力してください' };
+  }
+
+  try {
+    const response = await fetch('/api/test-azure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: endpoint.trim(), apiKey: apiKey.trim() }),
+    });
+
+    const result = (await response.json()) as ConnectionResult;
+    return result;
+  } catch (err) {
+    const error = err as Error;
     return { ok: false, message: `エラー: ${error.message}` };
   }
 }
