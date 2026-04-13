@@ -32,10 +32,10 @@ const LS = {
 // ─── Font size options ────────────────────────────────────────────────────────
 type FontSize = 'small' | 'medium' | 'large' | 'extra-large';
 const FONT_SIZES: { value: FontSize; label: string; scale: number }[] = [
-  { value: 'small',       label: '小 (Small)',        scale: 0.9 },
-  { value: 'medium',      label: '標準 (Medium)',     scale: 1.1 },
-  { value: 'large',       label: '大 (Large)',        scale: 1.25 },
-  { value: 'extra-large', label: '特大 (Extra Large)', scale: 1.5 },
+  { value: 'small',       label: '小 (Small)',        scale: 0.75 },
+  { value: 'medium',      label: '標準 (Medium)',     scale: 1.0 },
+  { value: 'large',       label: '大 (Large)',        scale: 1.4 },
+  { value: 'extra-large', label: '特大 (Extra Large)', scale: 1.75 },
 ];
 
 // ─── Azure region options ─────────────────────────────────────────────────────
@@ -881,10 +881,10 @@ function FontSizeSelector() {
     localStorage.setItem('app_font_size', size);
     // Apply font size immediately
     const scales: Record<typeof size, number> = {
-      small: 0.9,
-      medium: 1.1,
-      large: 1.25,
-      'extra-large': 1.5,
+      small: 0.75,          // 12px
+      medium: 1.0,          // 16px (base)
+      large: 1.4,           // 22.4px
+      'extra-large': 1.75,  // 28px
     };
     document.documentElement.style.fontSize = `${Math.round(16 * scales[size])}px`;
   };
@@ -929,7 +929,7 @@ function FontSizeSelector() {
               gap: '4px',
             }}
           >
-            <span style={{ fontSize: size.value === 'small' ? '12px' : size.value === 'medium' ? '14px' : size.value === 'large' ? '16px' : '18px' }}>
+            <span style={{ fontSize: size.value === 'small' ? '10px' : size.value === 'medium' ? '14px' : size.value === 'large' ? '18px' : '22px' }}>
               A
             </span>
             <span style={{ fontSize: '10px' }}>{size.label}</span>

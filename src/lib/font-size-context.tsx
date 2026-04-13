@@ -12,10 +12,10 @@ interface FontSizeContextType {
 const FontSizeContext = createContext<FontSizeContextType | undefined>(undefined);
 
 const FONT_SIZE_SCALE: Record<FontSize, number> = {
-  small: 0.9,
-  medium: 1.1,
-  large: 1.25,
-  'extra-large': 1.5,
+  small: 0.75,      // 16 * 0.75 = 12px
+  medium: 1.0,      // 16 * 1.0  = 16px (base)
+  large: 1.4,       // 16 * 1.4  = 22.4px
+  'extra-large': 1.75, // 16 * 1.75 = 28px
 };
 
 const LS_KEY = 'app_font_size';
