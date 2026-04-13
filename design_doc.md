@@ -448,4 +448,107 @@ const gradients = [
 **Device Frame**: デスクトップでは 390px デバイスフレーム（Dynamic Island・ホームインジケーター付き）をブラウザ中央に表示。
 
 ---
-Version: 5.0.6 Phoenix Edition (Deep Midnight + Gradient Vitality) Status: Implementation Ready (c) 2026 ambe / Business_Card_Folder
+
+## 7. Database Schema Updates (v5.0.6+)
+
+### 7.1 Two-Phase OCR Pipeline
+
+名刺読み取りの「表面 + 裏面」二段階パイプラインに対応したスキーマ更新。
+
+**新規カラム:**
+- `notes TEXT` — 裏面全文テキスト（back-side full text for search/lookup）
+  - Azure Document Intelligence の `prebuilt-read` で抽出
+  - 検索・参照用途の完全テキスト
+  - 暗号化対象外（Full-text search の簡易実装用）
+
+**変更履歴:**
+
+| カラム | v5.0.5 | v5.0.6+ | 説明 |
+|---|---|---|---|
+| `notes` | ❌ | ✅ | 裏面全文テキスト（新規追加） |
+| `ocr_raw_text` | ✅ | ✅ | 表面 OCR 生テキスト |
+| `thumbnail_url` | ✅ | ✅ | サムネイル (Base64) |
+| `attributes` | ✅ | ✅ | 表面構造化フィールド JSON |
+| `search_hashes` | ✅ | ✅ | 企業名・氏名の検索用ハッシュ |
+
+### 7.2 Schema Definition (src/lib/supabase-sql.ts)
+
+**CREATE TABLE business_cards:**
+```sql
+-- Primary & Security
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+encrypted_data TEXT NOT NULL
+encryption_key_id TEXT NOT NULL DEFAULT 'v1'
+
+-- OCR Results (Two-Phase)
+attributes JSONB NOT NULL DEFAULT '{}' 
+  └─ Front side: {name, company, title, email, tel, address}
+notes TEXT
+  └─ Back side: complete extracted text
+
+-- Search & Filtering
+search_hashes TEXT[] NOT NULL DEFAULT '{}'
+  └─ Deterministic hashes for blind search
+industry_category TEXT
+
+-- Timestamps & Metadata
+created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+scanned_at TIMESTAMP WITH TIME ZONE
+ocr_confidence FLOAT
+thumbnail_url TEXT
+```
+
+**Indexes:**
+- `idx_business_cards_user_id` — User filtering
+- `idx_business_cards_created_at` — Timeline view
+- `idx_business_cards_search_hashes` — GIN index for fast blind search
+- `idx_business_cards_industry` — Category filtering
+- `idx_business_cards_notes_fts` (optional) — Full-text search on back-side notes
+
+**RLS Policies:**
+- Users can only access own cards (SELECT, INSERT, UPDATE, DELETE)
+- Service role has admin access
+
+### 7.3 API Contract Updates (v5.0.6+)
+
+**POST /api/save-business-card**
+
+Request body:
+```json
+{
+  "name": "山田太郎",
+  "company": "株式会社ABC",
+  "title": "営業部長",
+  "email": "yamada@abc.co.jp",
+  "tel": "+81-90-1234-5678",
+  "address": "東京都渋谷区...",
+  "notes": "営業用連絡先。定例会は毎週月曜午前。",
+  "raw": "OCR生テキスト（表面全体）",
+  "thumbnail": "data:image/jpeg;base64,...",
+  "scannedAt": "2026-04-14T06:35:00Z"
+}
+```
+
+Maps to business_cards table:
+```json
+{
+  "attributes": {
+    "name": "山田太郎",
+    "company": "株式会社ABC",
+    "title": "営業部長",
+    "email": "yamada@abc.co.jp",
+    "tel": "+81-90-1234-5678",
+    "address": "東京都渋谷区..."
+  },
+  "notes": "営業用連絡先。定例会は毎週月曜午前。",
+  "ocr_raw_text": "OCR生テキスト（表面全体）",
+  "thumbnail_url": "data:image/jpeg;base64,...",
+  "scanned_at": "2026-04-14T06:35:00Z",
+  "search_hashes": ["株式会社abc", "山田太郎"]
+}
+```
+
+---
+Version: 5.0.6+ Phoenix Edition (Deep Midnight + Gradient Vitality) Status: Implementation Ready (c) 2026 ambe / Business_Card_Folder

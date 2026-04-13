@@ -6,11 +6,13 @@
 
 /**
  * Generate CREATE TABLE SQL for business_cards
- * Designed for v5.0.6 with encryption, search indexing, and metadata
+ * Designed for v5.0.6+ with OCR two-phase scanning (front + back)
+ * Includes encrypted data, search indexing, categorization, and full-text metadata
  */
 export function generateBusinessCardsTableSQL(): string {
-  return `-- Create business_cards table with full v5.0.6 schema
--- Includes encrypted data, search hashes, categorization, and metadata
+  return `-- Create business_cards table with full v5.0.6+ schema
+-- Two-phase OCR: front (name, company, etc.) + back (full-text notes)
+-- Includes RLS policies and metadata for dashboard filtering
 
 CREATE TABLE IF NOT EXISTS business_cards (
   -- Primary identifiers
@@ -24,15 +26,20 @@ CREATE TABLE IF NOT EXISTS business_cards (
   -- Encryption metadata (for future key rotation)
   encryption_key_id TEXT NOT NULL DEFAULT 'v1',
 
+  -- OCR Results: Front side (structured extraction)
+  -- Stored as JSON in attributes: {name, company, title, email, tel, address}
+  attributes JSONB NOT NULL DEFAULT '{}',
+
+  -- OCR Results: Back side (full-text)
+  -- Complete text extracted from business card back side for search/lookup
+  notes TEXT,
+
   -- Blind search hashes for privacy-preserving search
   -- Deterministic hashes of normalized: company name, person name
   search_hashes TEXT[] NOT NULL DEFAULT '{}',
 
   -- Categorization for dashboard filtering
   industry_category TEXT,
-
-  -- Additional metadata and unstructured attributes
-  attributes JSONB NOT NULL DEFAULT '{}',
 
   -- Timestamps
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -59,6 +66,11 @@ CREATE INDEX IF NOT EXISTS idx_business_cards_search_hashes
 
 CREATE INDEX IF NOT EXISTS idx_business_cards_industry
   ON business_cards(industry_category);
+
+-- Full-text search index on back-side notes (裏面テキスト検索用)
+-- Optional: Use tsvector for advanced full-text search
+-- CREATE INDEX IF NOT EXISTS idx_business_cards_notes_fts
+--   ON business_cards USING GIN(to_tsvector('japanese', COALESCE(notes, '')));
 
 -- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_business_cards_updated_at()
