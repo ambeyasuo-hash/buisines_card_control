@@ -163,7 +163,8 @@ export async function checkAzureConnectionViaServer(
   }
 
   try {
-    const response = await fetch('/api/test-azure', {
+    // 新しい Azure Document Intelligence テストエンドポイントを使用
+    const response = await fetch('/api/azure/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: endpoint.trim(), apiKey: apiKey.trim() }),
