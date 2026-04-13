@@ -74,234 +74,325 @@ auth_verify_hash: パスコード検証用ハッシュ
 recovery_hash: シードフレーズ検証用ハッシュ
 
 --------------------------------------------------------------------------------
-6. UI/UX デザイン規格 (Ambe Design System) — Phoenix Edition v5.0.5
+6. UI/UX デザイン規格 (Ambe Design System) — Phoenix Edition v5.0.6
 
 ### 6.1 デザイン哲学
-**Minimalist Security** — Apple のシステムUIのような簡潔さを追求。余分な装飾を排除し、本質的な機能美を実現。
+**Deep Dark Luxury** — iOS コントロールセンター / Linear / Vercel に代表されるミニマルかつ高級感のある質感を追求。
+**Device-in-Browser** — デスクトップではブラウザ内に「スマートフォンが浮かぶ」体験を提供（390px デバイスフレーム）。
+**Gradient Vitality** — 3色グラデーション体系（ブルー・エメラルド・パープル）でカテゴリを直感的に色分けし、UIに生命感を与える。
 **Kindness-Centered UX** — 認証失敗時の救済策（Elegant Rescue）を含め、隣人に寄り添うデザイン。
-**Zero-Knowledge Compatibility** — 数字で信頼を構築する視覚言語（信頼色=Blue-600、安全色=Emerald-500）。
 
 ### 6.2 カラーパレット
-| 用途 | 色 | 値 | 用途 |
-|------|------|------|------|
-| Primary Color | Blue-600 | #2563EB | CTA、信頼感、セキュリティ象徴 |
-| Accent Color | Emerald-500 | #10B981 | 成功、安全性、ポジティブ |
-| Surface | White | #FFFFFF | コンテンツ背景 |
-| Background | Slate-50 | #F8FAFC | ページ背景、清潔感 |
-| Text Primary | Slate-900 | #0F172A | 本文、高コントラスト |
-| Text Secondary | Slate-600 | #475569 | 副情報 |
-| Border | Slate-200 | #E2E8F0 | カード/入力欄枠線 |
-| Warning | Amber-500 | #F59E0B | 注意 |
-| Error | Red-600 | #DC2626 | エラー、削除 |
+
+#### 背景色
+| 用途 | OKLCH | 概算HEX | 備考 |
+|------|-------|---------|------|
+| メイン背景 | `oklch(0.12 0.02 250)` | `#0a0f1a` | ページ・デバイス外フレーム |
+| カード背景 | `oklch(0.15 0.025 250)` | `#0d1220` | コンテンツカード |
+| サイドバー | `oklch(0.14 0.02 250)` | `#0b1019` | サイドバー |
+| 入力フィールド | `oklch(0.18 0.02 250)` | `#111827` | `bg-white/5` 相当 |
+| ミュート | `oklch(0.20 0.015 250)` | `#141c2a` | 補助背景 |
+
+#### アクセントカラー（3色グラデーション体系）
+| 番号 | 名称 | グラデーション | 用途 |
+|------|------|--------------|------|
+| 1 | ブルー/シアン | `from-blue-500 to-cyan-400` | プライマリアクション・ヘッダーアイコン・第1カテゴリ (`index % 3 === 0`) |
+| 2 | エメラルド/ティール | `from-emerald-500 to-teal-500` | 確認アクション・成功・第2カテゴリ (`index % 3 === 1`) |
+| 3 | パープル/ピンク | `from-purple-500 to-pink-500` | 特別なアクション・第3カテゴリ (`index % 3 === 2`) |
+
+#### テキスト・ボーダー
+| 用途 | 値 |
+|------|-----|
+| Foreground (本文) | `oklch(0.95 0 0)` ≈ `#f2f2f2` |
+| Muted Foreground (副情報) | `oklch(0.60 0.01 250)` ≈ `#7a8599` |
+| ボーダー デフォルト | `border-white/10` または `border-white/20` |
+| ボーダー アクティブ | 各グラデーションカラーの 30% 透過 |
+| デストラクティブ | `oklch(0.577 0.245 27.325)` |
+
+#### CSS 変数（globals.css に定義）
+```css
+:root, .dark {
+  --background:         oklch(0.12 0.02 250);
+  --foreground:         oklch(0.95 0 0);
+  --card:               oklch(0.15 0.025 250);
+  --card-foreground:    oklch(0.95 0 0);
+  --popover:            oklch(0.15 0.025 250);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary:            oklch(0.65 0.2 250);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary:          oklch(0.18 0.02 250);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted:              oklch(0.20 0.015 250);
+  --muted-foreground:   oklch(0.60 0.01 250);
+  --accent:             oklch(0.55 0.15 160);
+  --accent-foreground:  oklch(0.98 0 0);
+  --destructive:        oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.95 0 0);
+  --border:             oklch(0.25 0.03 250);
+  --input:              oklch(0.18 0.02 250);
+  --ring:               oklch(0.65 0.2 250);
+  --radius:             0.75rem;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card:       var(--card);
+  /* ... 以下同様にすべての変数をマップ ... */
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; }
+}
+```
 
 ### 6.3 タイポグラフィシステム
-**フォントファミリー**: システムフォント優先
+**フォントファミリー**: Geist 優先、フォールバックにシステムフォント
 ```
-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
-      "Helvetica Neue", Arial, "Noto Sans", sans-serif
-mono: SFMono-Regular, "SF Mono", Monaco, Consolas, "Courier New", monospace
+sans: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+mono: 'Geist Mono', SFMono-Regular, "SF Mono", Monaco, Consolas, monospace
 ```
 
-**サイズ体系**:
-- xs: 12px / 16px line-height (ラベル、補助情報)
-- sm: 14px / 20px line-height (メタ情報)
-- base: 16px / 24px line-height (本文)
-- lg: 18px / 28px line-height (小見出し)
-- xl: 20px / 28px line-height (中見出し、font-weight: 600)
-- 2xl: 24px / 32px line-height (大見出し、font-weight: 700)
-- 3xl: 30px / 36px line-height (ページタイトル、font-weight: 700)
+**サイズ体系**（変更なし）:
+- xs: 12px / 16px (ラベル・補助情報)
+- sm: 14px / 20px (メタ情報)
+- base: 16px / 24px (本文)
+- lg: 18px / 28px (小見出し)
+- xl: 20px / 28px, font-weight 600 (中見出し)
+- 2xl: 24px / 32px, font-weight 700 (大見出し)
+- 3xl: 30px / 36px, font-weight 700 (ページタイトル)
 
 ### 6.4 スペーシング & レイアウト
-**8px Base Unit System** (全パディング・マージン・ギャップに適用):
+**8px Base Unit System**（変更なし）:
 ```
-1: 4px   | 2: 8px   | 3: 12px  | 4: 16px
-5: 20px  | 6: 24px  | 8: 32px  | 12: 48px
+1: 4px  | 2: 8px  | 3: 12px | 4: 16px
+5: 20px | 6: 24px | 8: 32px | 12: 48px
 ```
 
-**モバイルセントリック設計**:
-- 最大幅: 600px（厳守）
-- 中央配置: margin: auto
-- パディング: 16px (px-4)
-- Breakpoints: Mobile < 640px (default) | Tablet 640px+ (sm:) | Desktop 1024px+ (lg:)
+**レイアウト原則**:
+- モバイルファースト: `max-w-2xl mx-auto px-4`
+- 角丸: 大きめを基本 (`rounded-xl`, `rounded-2xl`)
+- 透明感: `backdrop-blur-xl`, `bg-card/95`
+- スペーシング: `gap-3`, `space-y-3` で統一感を維持
+
+**デスクトップ展開（Device-in-Browser）**:
+- デスクトップ (md+) では 390px × min(844px, 92svh) のデバイスフレームを表示
+- 外側: 深い夜空 (`#020510`) ＋ 浮遊するアンビエントオーブ（ブルー・エメラルド・パープル）
+- フレーム: `border-radius: 50px`, Dynamic Island, ホームインジケーター, サイドボタン
+- モバイル: フレームなし、フルスクリーン表示
 
 ### 6.5 コンポーネント規格
 
-#### Cards
-```tsx
-.ambe-card {
-  背景: 白, ボーダー: 1px Slate-200, 角丸: 12px (rounded-lg)
-  シャドウ: shadow-sm, ホバー: shadow-md + border upgrade
+#### グラデーションボーダーカード
+```css
+/* 1px グラデーションボーダーをラッパーで実現 */
+.card-wrapper {
+  @apply rounded-2xl p-[1px] bg-gradient-to-r from-blue-500/40 to-cyan-500/40;
 }
-.ambe-card-elevated { // より高い elevation
-  背景: 白, 角丸: 12px, シャドウ: shadow-md
+.card-inner {
+  @apply rounded-2xl bg-card;
 }
 ```
 
-#### Buttons (5 variants)
-```tsx
-.ambe-button-primary   // Blue-600 filled, white text
-.ambe-button-secondary // White bg, Slate-900 text, 2px border
-.ambe-button-accent    // Emerald-500, success/positive action
-.ambe-button-danger    // Red-600, destructive action
-.ambe-button-ghost     // Transparent, minimal style
-```
-全ボタン共通: パディング px-4 py-3, 角丸 lg, フォーカス ring-2 ring-offset-2
+#### アクションカード（ダッシュボード用）
+カード背景・アイコンコンテナ・ボーダーはすべて同一グラデーション系色で統一し、
+カテゴリ番号 `index % 3` によって自動色分け:
+- 0: ブルー系 `rgba(37,99,235,…)`
+- 1: エメラルド系 `rgba(16,185,129,…)`
+- 2: パープル系 `rgba(139,92,246,…)`
 
-#### Inputs & Forms
-```tsx
-.ambe-input {
-  パディング: 12px (px-3, py-3), ボーダー: 1px Slate-300, 角丸: lg
-  フォーカス: ring-2 ring-blue-500
-}
-.ambe-label { font-weight: 500, margin-bottom: 8px }
-.ambe-form-group { space-y-2, margin-bottom: 16px }
-```
+アイコンコンテナは `72×72px`, `border-radius: 18px`, 不透明度高めで背景から浮き立たせる。
 
-#### Typography
-```tsx
-.ambe-heading-1   // 30px, bold, page title
-.ambe-heading-2   // 24px, bold, section
-.ambe-heading-3   // 20px, semibold, subsection
-.ambe-text-body   // 16px, standard
-.ambe-text-secondary // 14px, supporting
-.ambe-text-muted  // 12px, hints
+#### ボタン
+```css
+/* プライマリ */
+@apply bg-gradient-to-r from-blue-500 to-blue-600 text-white
+       hover:from-blue-600 hover:to-blue-700 border-0 rounded-xl py-5;
+
+/* アウトライン */
+@apply border-white/20 bg-white/5 hover:bg-white/10 rounded-xl;
 ```
 
-#### Badges
-```tsx
-.ambe-badge-primary   // Blue background, blue text
-.ambe-badge-accent    // Emerald background
-.ambe-badge-warning   // Amber background
-.ambe-badge-danger    // Red background
+#### 入力フィールド
+```css
+@apply border-white/10 bg-white/5 rounded-xl
+       focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50;
 ```
 
-#### Icons
+#### アイコンボックス
+```css
+@apply flex h-10 w-10 items-center justify-center rounded-lg
+       bg-gradient-to-br from-blue-500/20 to-cyan-500/20
+       border border-blue-500/30;
+```
+
+#### Typography / Badge / Icon サイズ（変更なし）
 ```tsx
+.ambe-heading-1   // 30px, bold
+.ambe-heading-2   // 24px, bold
+.ambe-heading-3   // 20px, semibold
+.ambe-text-body   // 16px
+.ambe-text-secondary // 14px
+.ambe-text-muted  // 12px
+
+.ambe-badge-primary   // Blue/Cyan tint
+.ambe-badge-accent    // Emerald/Teal tint
+.ambe-badge-warning   // Amber tint
+.ambe-badge-danger    // Red tint
+
 .ambe-icon-sm  // 16px
 .ambe-icon-md  // 20px
 .ambe-icon-lg  // 24px
 .ambe-icon-xl  // 32px
 ```
 
-#### Layout & Utilities
-```tsx
-.ambe-container        // max-width: 600px, mx-auto
-.ambe-container-mobile // + px-4 py-8
-.ambe-divider          // 1px height, Slate-200
-.ambe-link             // Blue-600, underline
-.ambe-focus-ring       // ring-2 ring-blue-500 ring-offset-2
-.ambe-dialog-overlay   // fixed inset-0, bg-black/50
-.ambe-dialog           // modal container
-```
-
 ### 6.6 実装ルール
 
 ✅ **推奨 (DO)**:
 ```tsx
-// CSS classes を使う
-<button className="ambe-button-primary">送信</button>
+// Tailwind ユーティリティクラスを使う
+<div className="rounded-2xl bg-card border border-white/10 p-6">
 
-// Tailwind standard class
-<div className="p-4 rounded-lg border border-slate-200">
+// CSS変数を参照
+<div className="bg-background text-foreground">
 
-// CSS 変数を参照
-<div style={{ boxShadow: 'var(--shadow-md)' }}>
+// グラデーションは from-/to- で
+<button className="bg-gradient-to-r from-blue-500 to-cyan-400 text-white rounded-xl">
 
-// 複数クラスは className 文字列で
-<button className={`ambe-button-primary ${isLoading ? 'opacity-50' : ''}`}>
+// カテゴリ色分けは index % 3 で動的に
+const colorClass = ['from-blue-500/30 to-cyan-500/10',
+                    'from-emerald-500/30 to-teal-500/10',
+                    'from-purple-500/30 to-pink-500/10'][index % 3];
+
+// Framer Motion で hover/tap に物理感を
+<motion.button whileHover={{ scale: 1.02, y: -3 }} whileTap={{ scale: 0.97 }}>
 ```
 
 ❌ **禁止 (DON'T)**:
 ```tsx
-// インラインスタイルは絶対禁止
-<button style={{ backgroundColor: '#2563EB', padding: '12px 16px' }}>
+// ライトモード前提の白背景カード
+<div className="bg-white border border-slate-200">
 
-// 独断的なカラーコード
-<div style={{ color: '#123456' }}>
+// インラインスタイルでカラーコードを直書き（デバイスフレーム等の構造CSS は例外）
+<div style={{ color: '#2563EB' }}>
 
-// 任意の border-radius
-<div style={{ borderRadius: '10px' }}>
-
-// 不規則なパディング
+// 不規則なパディング・任意値
 <div style={{ padding: '17px 22px' }}>
-
-// Arbitrary Tailwind values
 <div className="w-[157px]">
+
+// グラデーションなしのフラットなプライマリカラー
+<button className="bg-blue-600">   // → bg-gradient-to-r from-blue-500 to-blue-600 に
 ```
 
-### 6.7 シャドウシステム (4段階のみ)
+### 6.7 シャドウシステム
 ```
-shadow-sm:  0 1px 2px 0 rgba(15,23,42,0.05)   // カード at rest
-shadow-md:  0 4px 6px -1px rgba(15,23,42,0.1) // カード on hover
-shadow-lg:  0 10px 15px -3px rgba(15,23,42,0.1) // 浮き上がり、モーダル
-shadow-xl:  0 20px 25px -5px rgba(15,23,42,0.1) // 最大の深さ
+/* ダーク背景向け（カラー付きグロー） */
+card-glow-blue:    0 6px 36px rgba(37,99,235,0.20), inset 0 1px 0 rgba(255,255,255,0.08)
+card-glow-emerald: 0 6px 36px rgba(16,185,129,0.16), inset 0 1px 0 rgba(255,255,255,0.08)
+card-glow-purple:  0 6px 36px rgba(139,92,246,0.16), inset 0 1px 0 rgba(255,255,255,0.08)
+
+/* デバイスフレーム */
+device-shadow: drop-shadow(0 60px 120px rgba(0,0,0,0.85))
+               drop-shadow(0 0 90px rgba(37,99,235,0.05))
 ```
 
 ### 6.8 ボーダーラディウス階層
 ```
-sm:  4px    (小要素、バッジ)
-md:  8px    (ボタン、入力欄)
-lg:  12px   ⭐ AMBE STANDARD (カード、コンテナ)
-xl:  16px   (モーダル、ダイアログ)
-2xl: 24px   (大きなサーフェス)
-full: 9999px (円形、ピル)
+sm:   4px     (小要素・バッジ)
+md:   8px     (ボタン・入力欄)
+lg:   12px    (標準カード)    ← --radius: 0.75rem
+xl:   16px    (モーダル・ダイアログ)
+2xl:  24px    (大きなサーフェス・アクションカード)
+full: 9999px  (円形・ピル・Dynamic Island)
+device-frame: 50px (デバイス外枠)
 ```
 
 ### 6.9 アクセシビリティ (WCAG 2.1 AA)
-- **カラーコントラスト**: 最小 4.5:1 (通常テキスト) / 3:1 (UI コンポーネント)
-- **フォーカス指標**: 全ボタン・入力欄に ring-2 blue-500 ring-offset-2
-- **セマンティック HTML**: 常に適切な要素を使用 (<button>, <input> など)
-- **本システムは全て WCAG AA 以上を達成**
+- **カラーコントラスト**: ダーク背景上の白テキストは自動的に高コントラストを満たす
+- **フォーカス指標**: `outline-ring/50` をグローバル適用（`@layer base` の `*` セレクタ）
+- **セマンティック HTML**: `<button>`, `<input>` 等を常に適切に使用
 
-### 6.10 モバイルセントリック設計のデスクトップ展開
-デスクトップで表示する際も 600px 幅を維持し、以下の手法で視認性を向上:
-- **背景色**: ページ背景を Slate-100 に
-- **中央コンテナ**: 600px, bg-white, shadow-2xl で「浮き上がって見える」演出
-- **視認性**: ホワイトスペースで洗練されたデバイスライク表示
+### 6.10 アニメーション（Framer Motion）
+```tsx
+// ページ遷移
+PAGE:     initial { opacity: 0, x: 28 }  →  animate { opacity: 1, x: 0, duration: 0.24, ease: 'easeOut' }
+SUB_PAGE: initial { opacity: 0, x: 32 }  →  animate { opacity: 1, x: 0, duration: 0.26, ease: 'easeOut' }
+
+// カードホバー
+whileHover: { y: -4, scale: 1.018 }
+whileTap:   { scale: 0.965 }
+transition: { type: 'spring', stiffness: 380, damping: 16 }
+
+// アイコンホバー
+animate: { scale: 1.12, rotate: 6 }
+transition: { type: 'spring', stiffness: 380, damping: 16 }
+
+// カード入場スタガー
+delay: 0.14 + index * 0.08
+```
 
 ### 6.11 使用パターン
 
-#### Form Group (基本)
+#### グラデーションボーダー付きカード
 ```tsx
-<div className="ambe-form-group">
-  <label className="ambe-label">メールアドレス</label>
-  <input className="ambe-input" type="email" />
+<div className="rounded-2xl p-[1px] bg-gradient-to-r from-blue-500/40 to-cyan-500/40">
+  <div className="rounded-2xl bg-card p-6">
+    <h2 className="text-xl font-semibold text-foreground mb-4">タイトル</h2>
+    <p className="text-sm text-muted-foreground mb-6">説明文</p>
+    <button className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl py-3">
+      アクション
+    </button>
+  </div>
 </div>
 ```
 
-#### Card + Button (一般的)
+#### アイコンボックス付きリストアイテム
 ```tsx
-<div className="ambe-card p-6">
-  <h2 className="ambe-heading-3 mb-4">タイトル</h2>
-  <p className="ambe-text-secondary mb-6">説明文</p>
-  <button className="w-full ambe-button-primary">アクション</button>
+// index % 3 で色分け
+const gradients = [
+  'from-blue-500/20 to-cyan-500/20 border-blue-500/30',
+  'from-emerald-500/20 to-teal-500/20 border-emerald-500/30',
+  'from-purple-500/20 to-pink-500/20 border-purple-500/30',
+];
+<div className={`flex h-10 w-10 items-center justify-center rounded-lg
+                 bg-gradient-to-br ${gradients[index % 3]} border`}>
+  <Icon className="h-5 w-5" />
 </div>
 ```
 
-#### Modal / Dialog
+#### フォームグループ（ダーク）
 ```tsx
-<div className="ambe-dialog-overlay">
-  <div className="ambe-dialog p-6">
-    <h2 className="ambe-heading-2 mb-4">確認</h2>
-    <p className="ambe-text-body mb-6">メッセージ</p>
-    <div className="flex gap-2">
-      <button className="flex-1 ambe-button-secondary">キャンセル</button>
-      <button className="flex-1 ambe-button-primary">確認</button>
+<div className="space-y-2 mb-4">
+  <label className="text-sm font-medium text-foreground">メールアドレス</label>
+  <input className="w-full border border-white/10 bg-white/5 rounded-xl px-4 py-3
+                    focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50
+                    text-foreground placeholder:text-muted-foreground" />
+</div>
+```
+
+#### Modal / Dialog（ダーク）
+```tsx
+<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+  <div className="rounded-2xl bg-card border border-white/10 shadow-xl max-w-sm w-full p-6">
+    <h2 className="text-xl font-bold text-foreground mb-4">確認</h2>
+    <p className="text-sm text-muted-foreground mb-6">メッセージ</p>
+    <div className="flex gap-3">
+      <button className="flex-1 border border-white/20 bg-white/5 hover:bg-white/10
+                         rounded-xl py-3 text-sm text-foreground">キャンセル</button>
+      <button className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600
+                         text-white rounded-xl py-3 text-sm font-medium">確認</button>
     </div>
   </div>
 </div>
 ```
 
-### 6.12 アニメーション
-```
---transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1)
---transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1)
---transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1)
-```
-
-### 6.13 Visual Trust & Slots
+### 6.12 Visual Trust & Slots
 **Visual Trust**: 鍵生成プロセスをアニメーション化し、「セキュリティ・コンテキストを構築中」と表示して安心感を可視化。
-**Slots**: 「プロフィール（Identity）」、「カード管理（Dashboard）」、「復旧（ElegantRescue）」の各タブを配置。
+**Slots**: 「スキャン（Identity）」、「名刺一覧（Dashboard）」、「設定（ElegantRescue）」の3タブを配置。
+**Device Frame**: デスクトップでは 390px デバイスフレーム（Dynamic Island・ホームインジケーター付き）をブラウザ中央に表示。
 
 ---
-Version: 5.0.5 Phoenix Edition (Elegant Resilience) Status: Implementation Ready (c) 2026 ambe / Business_Card_Folder
+Version: 5.0.6 Phoenix Edition (Deep Midnight + Gradient Vitality) Status: Implementation Ready (c) 2026 ambe / Business_Card_Folder

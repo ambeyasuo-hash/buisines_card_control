@@ -69,6 +69,25 @@ const config: Config = {
         800: "#991B1B",
         900: "#7F1D1D",
       },
+      cyan: {
+        300: "#67E8F9",
+        400: "#22D3EE",
+        500: "#06B6D4",
+      },
+      teal: {
+        400: "#2DD4BF",
+        500: "#14B8A6",
+        600: "#0D9488",
+      },
+      purple: {
+        400: "#C084FC",
+        500: "#A855F7",
+        600: "#9333EA",
+      },
+      pink: {
+        400: "#F472B6",
+        500: "#EC4899",
+      },
       transparent: "transparent",
       current: "currentColor",
     },

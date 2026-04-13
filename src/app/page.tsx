@@ -1,166 +1,284 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityPage } from '@/components/IdentityPage';
 import { Dashboard } from '@/components/Dashboard';
-import { ElegantRescue } from '@/components/ElegantRescue';
-import { Camera, List, Settings, ChevronLeft } from 'lucide-react';
+import { SettingsPage } from '@/components/SettingsPage';
+import { Camera, List, Settings, ChevronLeft, CreditCard, LogOut, Contact } from 'lucide-react';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
-export default function Home() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+// Page slide transition
+const PAGE = {
+  initial: { opacity: 0, x: 28 },
+  animate: { opacity: 1, x: 0, transition: { duration: 0.24, ease: 'easeOut' as const } },
+  exit:    { opacity: 0, x: -20, transition: { duration: 0.18, ease: 'easeIn' as const } },
+};
 
-  const actionCards = [
-    {
-      id: 'identity',
-      label: '名刺をスキャン',
-      sublabel: 'カメラで撮影してAI解析',
-      icon: Camera,
-      bgFrom: 'from-blue-600/40',
-      bgTo: 'to-blue-500/20',
-      borderColor: 'border-blue-400/30',
-      iconColor: 'text-blue-300',
-      iconBg: 'bg-blue-500/20',
-      hoverBg: 'hover:from-blue-600/50 hover:to-blue-500/30',
-    },
-    {
-      id: 'list',
-      label: '名刺一覧',
-      sublabel: '保存済みの名刺を確認',
-      icon: List,
-      bgFrom: 'from-emerald-600/40',
-      bgTo: 'to-emerald-500/20',
-      borderColor: 'border-emerald-400/30',
-      iconColor: 'text-emerald-300',
-      iconBg: 'bg-emerald-500/20',
-      hoverBg: 'hover:from-emerald-600/50 hover:to-emerald-500/30',
-    },
-    {
-      id: 'rescue',
-      label: '設定',
-      sublabel: 'APIキーとプロフィール',
-      icon: Settings,
-      bgFrom: 'from-purple-600/40',
-      bgTo: 'to-purple-500/20',
-      borderColor: 'border-purple-400/30',
-      iconColor: 'text-purple-300',
-      iconBg: 'bg-purple-500/20',
-      hoverBg: 'hover:from-purple-600/50 hover:to-purple-500/30',
-    },
-  ];
+// Sub-pages slide in from right
+const SUB_PAGE = {
+  initial: { opacity: 0, x: 32 },
+  animate: { opacity: 1, x: 0, transition: { duration: 0.26, ease: 'easeOut' as const } },
+  exit:    { opacity: 0, x: 28, transition: { duration: 0.16, ease: 'easeIn' as const } },
+};
+
+const ACTION_CARDS = [
+  {
+    id: 'scan' as const,
+    route: '/scan',
+    label: '名刺をスキャン',
+    sublabel: 'カメラで撮影してAI解析',
+    icon: Camera,
+    bg: 'linear-gradient(150deg, rgba(37,99,235,0.30) 0%, rgba(29,78,216,0.12) 100%)',
+    border: 'rgba(59,130,246,0.36)',
+    iconBg: 'rgba(37,99,235,0.45)',
+    iconBorder: 'rgba(96,165,250,0.55)',
+    iconColor: '#bfdbfe',
+    glow: '0 6px 36px rgba(37,99,235,0.20), inset 0 1px 0 rgba(255,255,255,0.08)',
+    hoverGlow: '0 12px 48px rgba(37,99,235,0.32), inset 0 1px 0 rgba(255,255,255,0.12)',
+  },
+  {
+    id: 'list' as const,
+    label: '名刺一覧',
+    sublabel: '保存済みの名刺を確認',
+    icon: List,
+    bg: 'linear-gradient(150deg, rgba(16,185,129,0.28) 0%, rgba(5,150,105,0.10) 100%)',
+    border: 'rgba(16,185,129,0.34)',
+    iconBg: 'rgba(16,185,129,0.42)',
+    iconBorder: 'rgba(52,211,153,0.55)',
+    iconColor: '#a7f3d0',
+    glow: '0 6px 36px rgba(16,185,129,0.16), inset 0 1px 0 rgba(255,255,255,0.08)',
+    hoverGlow: '0 12px 48px rgba(16,185,129,0.26), inset 0 1px 0 rgba(255,255,255,0.12)',
+  },
+  {
+    id: 'rescue' as const,
+    label: '設定',
+    sublabel: 'APIキーとプロフィール',
+    icon: Settings,
+    bg: 'linear-gradient(150deg, rgba(139,92,246,0.28) 0%, rgba(109,40,217,0.10) 100%)',
+    border: 'rgba(139,92,246,0.36)',
+    iconBg: 'rgba(139,92,246,0.42)',
+    iconBorder: 'rgba(167,139,250,0.55)',
+    iconColor: '#ddd6fe',
+    glow: '0 6px 36px rgba(139,92,246,0.16), inset 0 1px 0 rgba(255,255,255,0.08)',
+    hoverGlow: '0 12px 48px rgba(139,92,246,0.26), inset 0 1px 0 rgba(255,255,255,0.12)',
+  },
+];
+
+const SUB_PAGE_TITLES: Record<string, string> = {
+  identity: '自分の名刺',
+  list: '名刺一覧',
+  rescue: '設定',
+};
+
+export default function Home() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
   return (
     <div className="w-full">
-      {/* Dashboard View */}
-      {activeTab === 'dashboard' && (
-        <div className="space-y-8">
-          {/* Header */}
-          <div className="text-center space-y-2">
-            <h2 className="text-3xl font-bold text-white">ダッシュボード</h2>
-            <p className="text-white/60 text-sm">
-              現場での出会いを最速でお礼メールと音声に変える
-            </p>
-          </div>
+      <AnimatePresence mode="wait">
 
-          {/* Action Cards */}
-          <div className="space-y-4">
-            {actionCards.map((card) => {
-              const Icon = card.icon;
-              return (
-                <button
-                  key={card.id}
-                  onClick={() => setActiveTab(card.id as ActiveTab)}
-                  className={`w-full group relative overflow-hidden rounded-2xl border backdrop-blur-sm transition-all duration-300
-                    bg-gradient-to-br ${card.bgFrom} ${card.bgTo} ${card.borderColor}
-                    border border-white/10 hover:border-white/30 ${card.hoverBg}
-                    hover:shadow-2xl hover:shadow-white/10 active:scale-95`}
+        {/* ── DASHBOARD ── */}
+        {activeTab === 'dashboard' && (
+          <motion.div key="dashboard" {...PAGE}>
+
+            {/* App Header */}
+            <div
+              className="flex items-center justify-between px-5 pt-4 pb-3.5"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-7 h-7 rounded-xl flex items-center justify-center"
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    boxShadow: '0 0 12px rgba(37,99,235,0.45)',
+                  }}
                 >
-                  {/* Animated Gradient Background */}
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-10 blur-2xl"></div>
-                  </div>
+                  <CreditCard className="w-3.5 h-3.5 text-white" strokeWidth={2} />
+                </div>
+                <span className="text-white/90 font-medium text-sm tracking-tight">
+                  あんべの名刺代わり
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* My Business Card button */}
+                <motion.button
+                  whileHover={{ scale: 1.08, backgroundColor: 'rgba(37,99,235,0.20)' }}
+                  whileTap={{ scale: 0.93 }}
+                  onClick={() => setActiveTab('identity')}
+                  className="flex items-center gap-1.5 cursor-pointer px-2.5 py-1.5 rounded-xl"
+                  style={{
+                    background: 'rgba(37,99,235,0.10)',
+                    border: '1px solid rgba(59,130,246,0.28)',
+                    color: '#93c5fd',
+                    fontSize: '11px',
+                    transition: 'background 0.2s ease',
+                  }}
+                  title="自分の名刺を見る"
+                >
+                  <Contact className="w-3.5 h-3.5" />
+                  <span>自分の名刺</span>
+                </motion.button>
+                <motion.button
+                  whileHover={{ opacity: 0.75, scale: 1.04 }}
+                  whileTap={{ scale: 0.93 }}
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  style={{ color: 'rgba(255,255,255,0.32)', fontSize: '11px' }}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>ログアウト</span>
+                </motion.button>
+              </div>
+            </div>
 
-                  {/* Content - Centered Layout */}
-                  <div className="relative px-6 py-8 flex flex-col items-center justify-center text-center space-y-4">
-                    {/* Icon Container */}
-                    <div className={`p-4 rounded-2xl ${card.iconBg} group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className={`w-10 h-10 ${card.iconColor}`} strokeWidth={1.5} />
-                    </div>
+            {/* Page Title */}
+            <div className="px-5 pt-6 pb-5 text-center">
+              <motion.h1
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.06, duration: 0.32 }}
+                className="text-[26px] font-bold text-white tracking-tight"
+              >
+                ダッシュボード
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.12, duration: 0.32 }}
+                className="text-xs mt-1.5 leading-relaxed"
+                style={{ color: 'rgba(255,255,255,0.38)' }}
+              >
+                現場での出会いを最速でお礼メールと資産に変える
+              </motion.p>
+            </div>
 
-                    {/* Text */}
-                    <div className="space-y-1">
-                      <p className="font-semibold text-white text-lg leading-tight">
+            {/* Action Cards */}
+            <div className="px-4 pb-4" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {ACTION_CARDS.map((card, i) => {
+                const Icon = card.icon;
+                const isHovered = hoveredCard === card.id;
+                return (
+                  <motion.button
+                    key={card.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.14 + i * 0.08, type: 'spring', stiffness: 300, damping: 26 }}
+                    whileHover={{ y: -4, scale: 1.018 }}
+                    whileTap={{ scale: 0.965 }}
+                    onHoverStart={() => setHoveredCard(card.id)}
+                    onHoverEnd={() => setHoveredCard(null)}
+                    onClick={() => 'route' in card && card.route ? router.push(card.route) : setActiveTab(card.id as ActiveTab)}
+                    className="relative w-full rounded-2xl py-7 px-6 flex flex-col items-center gap-4 text-center cursor-pointer"
+                    style={{
+                      background: card.bg,
+                      border: `1px solid ${card.border}`,
+                      boxShadow: isHovered ? card.hoverGlow : card.glow,
+                      transition: 'box-shadow 0.25s ease',
+                    }}
+                  >
+                    {/* Icon */}
+                    <motion.div
+                      animate={{ scale: isHovered ? 1.12 : 1, rotate: isHovered ? 6 : 0 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 16 }}
+                      style={{
+                        background: card.iconBg,
+                        border: `1px solid ${card.iconBorder}`,
+                        borderRadius: '18px',
+                        width: '72px',
+                        height: '72px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: `0 4px 16px ${card.iconBg}`,
+                      }}
+                    >
+                      <Icon
+                        style={{ color: card.iconColor, width: '32px', height: '32px' }}
+                        strokeWidth={1.5}
+                      />
+                    </motion.div>
+
+                    {/* Label */}
+                    <div>
+                      <p className="font-semibold text-white text-[15px] leading-tight">
                         {card.label}
                       </p>
-                      <p className="text-white/50 text-xs leading-snug">
+                      <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.38)' }}>
                         {card.sublabel}
                       </p>
                     </div>
-                  </div>
 
-                  {/* Bottom Accent Line */}
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                </button>
-              );
-            })}
-          </div>
+                    {/* Bottom accent glow line */}
+                    <motion.div
+                      animate={{ opacity: isHovered ? 1 : 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="absolute bottom-0 left-6 right-6 h-px rounded-full"
+                      style={{ background: `linear-gradient(90deg, transparent, ${card.border}, transparent)` }}
+                    />
+                  </motion.button>
+                );
+              })}
+            </div>
 
-          {/* Status Bar */}
-          <div className="mt-8 pt-6 border-t border-white/10 flex items-center justify-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-            <p className="text-xs text-white/50">システム正常・準備完了</p>
-          </div>
-        </div>
-      )}
-
-      {/* Identity Page (Scan) */}
-      {activeTab === 'identity' && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 mb-6">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            {/* Status Indicator */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+              className="flex items-center justify-center gap-2 py-5"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '4px 20px 0' }}
             >
-              <ChevronLeft className="w-5 h-5 text-white/70" />
-            </button>
-            <h2 className="text-xl font-semibold text-white">名刺をスキャン</h2>
-          </div>
-          <IdentityPage />
-        </div>
-      )}
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
+              />
+              <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+                システム正常・準備完了
+              </span>
+            </motion.div>
 
-      {/* Dashboard List */}
-      {activeTab === 'list' && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 mb-6">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-white/70" />
-            </button>
-            <h2 className="text-xl font-semibold text-white">名刺一覧</h2>
-          </div>
-          <Dashboard />
-        </div>
-      )}
+          </motion.div>
+        )}
 
-      {/* Settings Page */}
-      {activeTab === 'rescue' && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 mb-6">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+        {/* ── SUB PAGES ── */}
+        {activeTab !== 'dashboard' && (
+          <motion.div key={activeTab} {...SUB_PAGE}>
+
+            {/* Sub-page Header */}
+            <div
+              className="flex items-center gap-2 px-4 pt-4 pb-3.5"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <ChevronLeft className="w-5 h-5 text-white/70" />
-            </button>
-            <h2 className="text-xl font-semibold text-white">設定</h2>
-          </div>
-          <ElegantRescue />
-        </div>
-      )}
+              <motion.button
+                whileHover={{ x: -3, backgroundColor: 'rgba(255,255,255,0.07)' }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setActiveTab('dashboard')}
+                className="p-2 rounded-xl cursor-pointer"
+                style={{ color: 'rgba(255,255,255,0.55)' }}
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </motion.button>
+              <h2 className="text-white font-semibold text-[15px]">
+                {SUB_PAGE_TITLES[activeTab]}
+              </h2>
+            </div>
+
+            {/* Sub-page content */}
+            <div className="px-5 pt-5 pb-6">
+              {activeTab === 'identity' && <IdentityPage />}
+              {activeTab === 'list'     && <Dashboard />}
+              {activeTab === 'rescue'   && <SettingsPage />}
+            </div>
+
+          </motion.div>
+        )}
+
+      </AnimatePresence>
     </div>
   );
 }
