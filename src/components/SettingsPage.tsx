@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
   Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
+  Copy, Code2, ChevronDown,
 } from 'lucide-react';
 import {
   checkSupabaseConnection,
@@ -12,6 +13,10 @@ import {
   checkGeminiConnection,
   type ConnectionResult,
 } from '@/lib/check-connection';
+import {
+  generateBusinessCardsTableSQL,
+  generateSQLEditorUrl,
+} from '@/lib/supabase-sql';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -637,6 +642,177 @@ function TestResult({ result, show }: { result: ConnectionResult; show: boolean 
   );
 }
 
+/** SQL Schema Section */
+function SQLSchemaSection({ supabaseUrl }: { supabaseUrl: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const sqlCode = generateBusinessCardsTableSQL();
+  const sqlEditorUrl = generateSQLEditorUrl(supabaseUrl);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(sqlCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <details
+      open={isOpen}
+      onToggle={(e) => setIsOpen(e.currentTarget.open)}
+      style={{
+        marginTop: '16px',
+        background: 'rgba(37,99,235,0.06)',
+        border: '1px solid rgba(59,130,246,0.20)',
+        borderRadius: '12px',
+        padding: '0',
+        cursor: 'pointer',
+      }}
+    >
+      <summary
+        style={{
+          padding: '12px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: 'rgba(255,255,255,0.70)',
+          userSelect: 'none',
+          listStyle: 'none',
+        }}
+      >
+        <motion.div
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronDown style={{ width: '16px', height: '16px' }} />
+        </motion.div>
+        <Code2 style={{ width: '14px', height: '14px', color: '#93c5fd' }} />
+        <span>SQLスキーマを生成 (Supabase 初期設定用)</span>
+      </summary>
+
+      <motion.div
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: isOpen ? 1 : 0, height: isOpen ? 'auto' : 0 }}
+        transition={{ duration: 0.2 }}
+        style={{ overflow: 'hidden' }}
+      >
+        <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(59,130,246,0.15)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Description */}
+          <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', lineHeight: '1.6' }}>
+            このSQLをSupabaseのSQL Editorにコピー&ペーストして実行すると、business_cardsテーブルが作成されます。
+            暗号化対応、検索インデックス、Row Level Security（RLS）が自動設定されます。
+          </p>
+
+          {/* SQL Code Block */}
+          <div
+            style={{
+              background: 'rgba(0,0,0,0.40)',
+              border: '1px solid rgba(59,130,246,0.15)',
+              borderRadius: '8px',
+              padding: '10px 12px',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+              color: 'rgba(255,255,255,0.50)',
+              maxHeight: '240px',
+              overflowY: 'auto',
+              lineHeight: '1.5',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {sqlCode}
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Copy button */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.93 }}
+              onClick={handleCopy}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: copied ? 'rgba(16,185,129,0.20)' : 'rgba(37,99,235,0.20)',
+                border: copied ? '1px solid rgba(52,211,153,0.35)' : '1px solid rgba(59,130,246,0.35)',
+                color: copied ? '#6ee7b7' : '#93c5fd',
+                fontSize: '11px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {copied ? (
+                <>
+                  <Check style={{ width: '14px', height: '14px' }} strokeWidth={2.5} />
+                  コピー完了
+                </>
+              ) : (
+                <>
+                  <Copy style={{ width: '14px', height: '14px' }} strokeWidth={2} />
+                  SQLをコピー
+                </>
+              )}
+            </motion.button>
+
+            {/* Open SQL Editor button */}
+            <motion.a
+              href={sqlEditorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.93 }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'rgba(99,102,241,0.20)',
+                border: '1px solid rgba(165,180,252,0.35)',
+                color: '#a5b4fc',
+                fontSize: '11px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textDecoration: 'none',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(99,102,241,0.30)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(99,102,241,0.20)';
+              }}
+            >
+              <ExternalLink style={{ width: '14px', height: '14px' }} strokeWidth={2} />
+              SQL Editorで開く
+            </motion.a>
+          </div>
+
+          {/* Usage steps */}
+          <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.20)', borderRadius: '8px', padding: '10px 12px' }}>
+            <p style={{ fontSize: '10px', color: 'rgba(251,191,36,0.70)', fontWeight: 500, marginBottom: '6px' }}>
+              📋 使用手順：
+            </p>
+            <ol style={{ fontSize: '10px', color: 'rgba(255,255,255,0.40)', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+              <li>上の「SQLをコピー」ボタンをクリック</li>
+              <li>「SQL Editorで開く」をクリック（または手動で Supabase ダッシュボード → SQL Editor）</li>
+              <li>SQLを貼り付けて「実行」ボタンを押す</li>
+              <li>テーブル作成完了！</li>
+            </ol>
+          </div>
+        </div>
+      </motion.div>
+    </details>
+  );
+}
+
 /** Section header row */
 function SectionHeader({
   icon: Icon,
@@ -913,6 +1089,9 @@ export function SettingsPage() {
               )}
             </div>
             <TestResult result={testMessages.supabase} show={testStatus.supabase !== 'idle'} />
+
+            {/* SQL Schema section */}
+            {form.supabaseUrl.trim() && <SQLSchemaSection supabaseUrl={form.supabaseUrl} />}
           </div>
         </div>
       </SectionCard>
