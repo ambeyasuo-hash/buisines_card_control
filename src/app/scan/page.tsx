@@ -12,8 +12,9 @@ type ScanState = 'initializing' | 'ready' | 'scanning' | 'preview';
 // Business card aspect ratio: 91mm × 55mm
 const CARD_RATIO = 91 / 55; // ≈ 1.655
 const GUIDE_WIDTH_RATIO = 0.88; // 88% of container width
-const THUMBNAIL_WIDTH = 480;
-const HIRES_WIDTH = 1200;
+const THUMBNAIL_WIDTH = 150;    // サムネイル用：150px幅
+const HIRES_WIDTH = 1200;       // OCR用：1200px幅
+const HIRES_HEIGHT = 800;       // OCR用：固定800px高さ
 
 // ─── ScanPage ─────────────────────────────────────────────────────────────────
 export default function ScanPage() {
@@ -102,14 +103,13 @@ export default function ScanPage() {
     const srcW = guideRect.width * scaleX;
     const srcH = guideRect.height * scaleY;
 
-    // ── Hi-res capture (OCR用) ──
+    // ── Hi-res capture (OCR用 1200x800px固定) ──
     const hiresCanvas = document.createElement('canvas');
-    const hiresScale = HIRES_WIDTH / srcW;
     hiresCanvas.width = HIRES_WIDTH;
-    hiresCanvas.height = Math.round(srcH * hiresScale);
+    hiresCanvas.height = HIRES_HEIGHT;
     const hiresCtx = hiresCanvas.getContext('2d')!;
-    hiresCtx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, hiresCanvas.width, hiresCanvas.height);
-    const hiresBase64 = hiresCanvas.toDataURL('image/jpeg', 0.92);
+    hiresCtx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, HIRES_WIDTH, HIRES_HEIGHT);
+    const hiresBlob = hiresCanvas.toDataURL('image/jpeg', 0.92);
 
     // ── Thumbnail capture (一覧表示用) ──
     const thumbScale = THUMBNAIL_WIDTH / srcW;
@@ -119,7 +119,7 @@ export default function ScanPage() {
     thumbCtx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
     const thumbBase64 = canvas.toDataURL('image/jpeg', 0.72);
 
-    setHiresData(hiresBase64);
+    setHiresData(hiresBlob);
     setThumbnail(thumbBase64);
 
     // アニメーション後にプレビューへ
@@ -136,7 +136,7 @@ export default function ScanPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full min-h-screen flex flex-col" style={{ background: '#020617' }}>
+    <div className="relative w-full min-h-screen flex flex-col" style={{ background: '#0a0f1a' }}>
 
       {/* ── Header ── */}
       <div
@@ -272,6 +272,7 @@ export default function ScanPage() {
                   overflow: 'hidden',
                   border: '1px solid rgba(16,185,129,0.40)',
                   boxShadow: '0 0 40px rgba(16,185,129,0.18), 0 20px 60px rgba(0,0,0,0.5)',
+                  backdropFilter: 'blur(12px)',
                   width: '100%',
                   maxWidth: '480px',
                 }}
@@ -397,8 +398,16 @@ export default function ScanPage() {
                 whileHover={{ scale: 1.02, boxShadow: '0 8px 32px rgba(16,185,129,0.35)' }}
                 whileTap={{ scale: 0.96 }}
                 onClick={() => {
-                  // 次フェーズ: OCR解析などへ渡す
-                  alert('OCR解析フェーズへ進みます（Phase 2 で実装予定）');
+                  // OCR解析フェーズへ進む
+                  if (hiresData) {
+                    // localStorage に一時保存し、OCR解析ページへ遷移
+                    sessionStorage.setItem('cardScan', JSON.stringify({
+                      hiresData,
+                      thumbnail,
+                      timestamp: new Date().toISOString(),
+                    }));
+                    router.push('/scan/analyze');
+                  }
                 }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl cursor-pointer"
                 style={{

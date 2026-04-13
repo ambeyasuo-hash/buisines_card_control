@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityPage } from '@/components/IdentityPage';
 import { Dashboard } from '@/components/Dashboard';
 import { SettingsPage } from '@/components/SettingsPage';
+import { PWAInstallGuide } from '@/components/PWAInstallGuide';
 import { Camera, List, Settings, ChevronLeft, CreditCard, LogOut, Contact } from 'lucide-react';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
@@ -80,6 +81,9 @@ export default function Home() {
 
   return (
     <div className="w-full">
+      {/* PWA Install Guide */}
+      <PWAInstallGuide />
+
       <AnimatePresence mode="wait">
 
         {/* ── DASHBOARD ── */}
