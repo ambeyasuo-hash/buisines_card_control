@@ -49,12 +49,11 @@ export async function POST(request: Request): Promise<Response> {
     console.log('[Azure Test] Testing endpoint:', baseUrl);
 
     // Azure Document Intelligence への POST リクエスト
-    // 複数のパスを試す
+    // 最新 → 安定版 → 旧名称 の順で試す
     const paths = [
       '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2024-02-29-preview',
       '/documentintelligence/document-models/prebuilt-read:analyze?api-version=2023-10-31-preview',
-      '/formrecognizer/documentModels:list?api-version=2023-10-31-preview',
-      '/formrecognizer/v3.0/document-models:list?api-version=2023-10-31-preview',
+      '/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31',
     ];
 
     let lastError: { status?: number; message?: string } | null = null;

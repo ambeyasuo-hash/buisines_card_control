@@ -38,6 +38,7 @@ const LS_AZURE = {
 } as const;
 
 // ─── Azure OCR helper ─────────────────────────────────────────────────────────
+// CORS 回避のため /api/azure/analyze Route Handler 経由でサーバーサイドから呼び出す
 async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
   const endpoint = localStorage.getItem(LS_AZURE.endpoint)?.trim() ?? '';
   const apiKey   = localStorage.getItem(LS_AZURE.key)?.trim()      ?? '';
@@ -46,50 +47,20 @@ async function runAzureOcr(hiresBase64: string): Promise<OcrResult> {
     return { error: '名刺読み取りの設定が完了していません。\n\n設定画面でAzure OCRのエンドポイントとAPIキーを入力してください。' };
   }
 
-  // Base64 → Blob
-  const byteStr   = atob(hiresBase64.split(',')[1]);
-  const arr       = new Uint8Array(byteStr.length);
-  for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
-  const blob = new Blob([arr], { type: 'image/jpeg' });
-
-  // Submit to Read API
-  const submitUrl = `${endpoint}/vision/v3.2/read/analyze?language=ja`;
-  const submitRes = await fetch(submitUrl, {
-    method:  'POST',
-    headers: { 'Ocp-Apim-Subscription-Key': apiKey, 'Content-Type': 'image/jpeg' },
-    body:    blob,
+  // サーバーサイドの Route Handler 経由で Azure Document Intelligence を呼び出す
+  const res = await fetch('/api/azure/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64: hiresBase64, endpoint, apiKey }),
   });
 
-  if (!submitRes.ok) {
-    if (submitRes.status === 401 || submitRes.status === 403) {
-      return { error: '名刺の読み取りに失敗しました。\n\nAPIキーが正しくないか、Azure リソースの権限設定に問題がある可能性があります。\n設定画面でAPIキーを確認してください。' };
-    }
-    if (submitRes.status === 400) {
-      return { error: '名刺の読み取りに失敗しました。\n\n画像がぼやけているか、反射していないか確認してください。\n光の反射を抑えて、もう少し近づけて撮影してみてください。' };
-    }
-    return { error: `名刺の読み取りサービスが一時的に利用できません（エラー: ${submitRes.status}）。\n\nしばらくしてからもう一度お試しください。` };
+  const data = await res.json() as { ok: boolean; lines?: string[]; error?: string };
+
+  if (!data.ok || !data.lines) {
+    return { error: data.error ?? '名刺の読み取りに失敗しました。もう一度お試しください。' };
   }
 
-  // Poll result
-  const operationUrl = submitRes.headers.get('Operation-Location') ?? '';
-  for (let i = 0; i < 15; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const pollRes  = await fetch(operationUrl, { headers: { 'Ocp-Apim-Subscription-Key': apiKey } });
-    const pollData = await pollRes.json();
-
-    if (pollData.status === 'succeeded') {
-      const lines: string[] = [];
-      for (const page of pollData.analyzeResult?.readResults ?? []) {
-        for (const line of page.lines ?? []) lines.push(line.text);
-      }
-      return parseBusinessCard(lines);
-    }
-    if (pollData.status === 'failed') {
-      return { error: '名刺の読み取りに失敗しました。\n\n画像がぼやけているか、テキストが小さすぎないか確認してください。\n明るい場所で、光が反射しないよう調整して、もう一度スキャンしてください。' };
-    }
-  }
-
-  return { error: '名刺の読み取りに時間がかかりすぎました。\n\nインターネットの接続状況を確認して、もう一度お試しください。' };
+  return parseBusinessCard(data.lines);
 }
 
 // ─── Simple business card parser ──────────────────────────────────────────────
