@@ -26,7 +26,17 @@ const LS = {
   azureKey:         'azure_ocr_key',
   azureRegion:      'azure_ocr_region',
   geminiKey:        'gemini_api_key',
+  fontSize:         'app_font_size',
 } as const;
+
+// ─── Font size options ────────────────────────────────────────────────────────
+type FontSize = 'small' | 'medium' | 'large' | 'extra-large';
+const FONT_SIZES: { value: FontSize; label: string; scale: number }[] = [
+  { value: 'small',       label: '小 (Small)',        scale: 0.9 },
+  { value: 'medium',      label: '標準 (Medium)',     scale: 1.1 },
+  { value: 'large',       label: '大 (Large)',        scale: 1.25 },
+  { value: 'extra-large', label: '特大 (Extra Large)', scale: 1.5 },
+];
 
 // ─── Azure region options ─────────────────────────────────────────────────────
 const AZURE_REGIONS = [
@@ -855,6 +865,82 @@ function SectionHeader({
   );
 }
 
+/** Font size selector with segmented control style */
+function FontSizeSelector() {
+  const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large' | 'extra-large'>('medium');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('app_font_size') as any || 'medium';
+    setFontSize(saved);
+    setMounted(true);
+  }, []);
+
+  const handleChange = (size: typeof fontSize) => {
+    setFontSize(size);
+    localStorage.setItem('app_font_size', size);
+    // Apply font size immediately
+    const scales: Record<typeof size, number> = {
+      small: 0.9,
+      medium: 1.1,
+      large: 1.25,
+      'extra-large': 1.5,
+    };
+    document.documentElement.style.fontSize = `${Math.round(16 * scales[size])}px`;
+  };
+
+  if (!mounted) return null;
+
+  const sizes: { value: typeof fontSize; label: string; desc: string }[] = [
+    { value: 'small', label: '小', desc: 'Small' },
+    { value: 'medium', label: '標準', desc: 'Medium' },
+    { value: 'large', label: '大', desc: 'Large' },
+    { value: 'extra-large', label: '特大', desc: 'XL' },
+  ];
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+      {sizes.map((size) => {
+        const isSelected = fontSize === size.value;
+        return (
+          <motion.button
+            key={size.value}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => handleChange(size.value)}
+            style={{
+              padding: '12px 8px',
+              background: isSelected
+                ? 'linear-gradient(135deg, rgba(139,92,246,0.40), rgba(109,40,217,0.30))'
+                : 'rgba(255,255,255,0.05)',
+              border: isSelected
+                ? '1px solid rgba(167,139,250,0.50)'
+                : '1px solid rgba(255,255,255,0.10)',
+              borderRadius: '10px',
+              color: isSelected ? '#ddd6fe' : 'rgba(255,255,255,0.50)',
+              fontSize: '12px',
+              fontWeight: isSelected ? 600 : 500,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+            }}
+          >
+            <span style={{ fontSize: size.value === 'small' ? '12px' : size.value === 'medium' ? '14px' : size.value === 'large' ? '16px' : '18px' }}>
+              A
+            </span>
+            <span style={{ fontSize: '10px' }}>{size.label}</span>
+            <span style={{ fontSize: '9px', opacity: 0.6 }}>{size.desc}</span>
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function SettingsPage() {
   const [form, setForm] = useState<FormState>({
@@ -1218,6 +1304,25 @@ export function SettingsPage() {
             <TestResult result={testMessages.gemini} show={testStatus.gemini !== 'idle'} />
           </div>
         </div>
+      </SectionCard>
+
+      {/* ═══ Font Size ═══ */}
+      <SectionCard
+        delay={0.12}
+        accent={{
+          bg: 'linear-gradient(150deg, rgba(139,92,246,0.14) 0%, rgba(109,40,217,0.06) 100%)',
+          border: 'rgba(139,92,246,0.26)',
+        }}
+      >
+        <SectionHeader
+          icon={Sparkles}
+          title="文字表示量（Font Size）"
+          subtitle="アプリ全体のテキストサイズをカスタマイズ"
+          iconBg="rgba(139,92,246,0.28)"
+          iconBorder="rgba(167,139,250,0.40)"
+          iconColor="#ddd6fe"
+        />
+        <FontSizeSelector />
       </SectionCard>
 
       {/* ═══ Info banner ═══ */}
