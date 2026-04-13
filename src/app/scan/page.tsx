@@ -136,17 +136,6 @@ export default function ScanPage() {
     };
   }, []);
 
-  useEffect(() => {
-    const check = () => setIsPortrait(window.innerWidth < window.innerHeight);
-    check();
-    window.addEventListener('resize', check);
-    window.addEventListener('orientationchange', check);
-    return () => {
-      window.removeEventListener('resize', check);
-      window.removeEventListener('orientationchange', check);
-    };
-  }, []);
-
   // ── 2. Camera initialization (4K優先) ─────────────────────────────────────
   //
   // 依存配列に cameraKey を含めることで、再撮影・裏面スキャン開始時に
@@ -257,6 +246,9 @@ export default function ScanPage() {
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraReady(false);
     setErrorMsg(null);
+    // 先に scanState を initializing に戻すことで isCamera = true になり
+    // カメラビューが表示されてから getUserMedia が走る (真っ暗防止)
+    setScanState('initializing');
     // cameraKey を上げて useEffect を再実行させる
     setCameraKey((k) => k + 1);
   }, []);
@@ -317,6 +309,13 @@ export default function ScanPage() {
 
     setCapturePayload({ imageBase64, cropRegion });
     setThumbnail(thumbBase64);
+
+    // キャプチャ完了後すみやかにカメラストリームを解放 (LEDオフ + 次回再起動に備える)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
 
     setTimeout(() => setScanState('preview'), 1000);
   }, [cameraReady]);
@@ -465,8 +464,9 @@ export default function ScanPage() {
       }}
     >
       {/* ── Portrait Warning Overlay ── */}
+      {/* isCamera のとき (撮影中) のみ表示。プレビュー以降は自由な向きを許可 */}
       <AnimatePresence>
-        {isPortrait && (
+        {isPortrait && isCamera && (
           <motion.div
             key="portrait-warn"
             initial={{ opacity: 0 }}
