@@ -83,6 +83,11 @@ export default function ScanPage() {
   const [isPortrait,  setIsPortrait]  = useState(false);
   const [errorMsg,    setErrorMsg]    = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  /**
+   * cameraKey をインクリメントするたびにカメラ初期化 useEffect が再実行される。
+   * 再撮影・裏面スキャン開始時はこのキーを上げてストリームを確実に再起動する。
+   */
+  const [cameraKey, setCameraKey] = useState(0);
 
   // Capture & result data
   const [thumbnail,      setThumbnail]      = useState<string | null>(null);
@@ -119,8 +124,29 @@ export default function ScanPage() {
   }, []);
 
   // ── 2. Camera initialization (4K優先) ─────────────────────────────────────
+  //
+  // 依存配列に cameraKey を含めることで、再撮影・裏面スキャン開始時に
+  // 旧ストリームの完全停止 → 映像クリア → 新ストリーム取得 の順序を保証する。
+  //
   useEffect(() => {
     let cancelled = false;
+
+    // ① 旧ストリームを確実に停止してから映像要素をクリア
+    const prev = streamRef.current;
+    if (prev) {
+      prev.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    // ② UI をリセット (cameraKey > 0 の場合 = 再起動)
+    if (cameraKey > 0) {
+      setCameraReady(false);
+      setErrorMsg(null);
+      setScanState('initializing');
+    }
 
     const startCamera = async () => {
       try {
@@ -134,35 +160,81 @@ export default function ScanPage() {
           audio: false,
         });
 
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        // キャンセル済み (クリーンアップが先行した場合) はすぐ停止して終了
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
+
+        // video 要素に新ストリームをアタッチ
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          // srcObject を設定した後 play() を明示的に呼ぶことで
+          // 一部ブラウザの autoPlay が効かない問題を回避
+          videoRef.current.play().catch(() => { /* 自動再生ブロック時は onLoadedMetadata で対応 */ });
+        }
       } catch (err) {
         if (cancelled) return;
         const e = err as DOMException;
+
+        // 再起動失敗時は専用メッセージを出す
+        const isRetry = cameraKey > 0;
         if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
           setErrorMsg('カメラの使用が許可されていません。\n\nブラウザ設定 → カメラ → このサイトに許可してください。');
         } else if (e.name === 'NotFoundError') {
           setErrorMsg('カメラが見つかりません。\n\nカメラ付きデバイスで開いてください。');
         } else if (e.name === 'NotReadableError') {
-          setErrorMsg('カメラが他のアプリで使用中です。\n\nビデオ通話などを終了してから再試行してください。');
+          setErrorMsg(
+            isRetry
+              ? 'カメラの再初期化に失敗しました。\n\n前のセッションがまだ解放されていない可能性があります。\nページを更新してもう一度お試しください。'
+              : 'カメラが他のアプリで使用中です。\n\nビデオ通話などを終了してから再試行してください。',
+          );
         } else {
-          setErrorMsg('カメラの起動に失敗しました。\n\nブラウザを再起動してもう一度お試しください。');
+          setErrorMsg(
+            isRetry
+              ? 'カメラの再初期化に失敗しました。\n\nページを更新してもう一度お試しください。'
+              : 'カメラの起動に失敗しました。\n\nブラウザを再起動してもう一度お試しください。',
+          );
         }
         setScanState('ready');
       }
     };
 
     startCamera();
+
     return () => {
       cancelled = true;
+      // クリーンアップ: エフェクトが再実行される前に現在のストリームを停止
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraKey]); // cameraKey が変わるたびに再起動
 
   const handleVideoReady = useCallback(() => {
     setCameraReady(true);
     setScanState('ready');
+  }, []);
+
+  /**
+   * カメラを安全に停止してから cameraKey をインクリメントし再起動をトリガーする。
+   * resetFull / retake / startBackScan のすべてからこれを使う。
+   */
+  const restartCamera = useCallback(() => {
+    // ストリーム停止は useEffect のクリーンアップに任せず、
+    // ここでも即時停止することで二重解放の競合を防ぐ
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraReady(false);
+    setErrorMsg(null);
+    // cameraKey を上げて useEffect を再実行させる
+    setCameraKey((k) => k + 1);
   }, []);
 
   // ── 3. Capture: フルフレーム + クロップ座標をサーバーへ送信 ───────────────
@@ -284,24 +356,27 @@ export default function ScanPage() {
     setFrontResult(null);
     setBackNotes(null);
     setScanPhase('front');
-    setScanState('ready');
-  }, []);
+    // ストリームを停止してから再起動 (真っ暗防止)
+    restartCamera();
+  }, [restartCamera]);
 
   /** 裏面スキャン開始 (フロント結果は保持) */
   const startBackScan = useCallback(() => {
     setCapturePayload(null);
     setThumbnail(null);
     setScanPhase('back');
-    setScanState('ready');
-  }, []);
+    // 前のストリームを完全停止してから新セッションを開始 (真っ暗防止)
+    restartCamera();
+  }, [restartCamera]);
 
   /** 同じ面を再スキャン */
   const retake = useCallback(() => {
     setCapturePayload(null);
     setThumbnail(null);
     if (scanPhase === 'back') setBackNotes(null);
-    setScanState('ready');
-  }, [scanPhase]);
+    // ストリームを停止してから再起動 (真っ暗防止)
+    restartCamera();
+  }, [scanPhase, restartCamera]);
 
   // ─── Derived values ────────────────────────────────────────────────────────
   const phaseLabel = scanPhase === 'front' ? '表面' : '裏面';
@@ -405,13 +480,27 @@ export default function ScanPage() {
               {errorMsg && (
                 <div style={{ zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '0 40px', textAlign: 'center' }}>
                   <div style={{ width: 56, height: 56, borderRadius: 18, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Camera style={{ width: 26, height: 26, color: '#fca5a5' }} />
+                    <AlertCircle style={{ width: 26, height: 26, color: '#fca5a5' }} />
                   </div>
                   <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{errorMsg}</p>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => window.location.reload()}
-                    style={{ background: 'rgba(37,99,235,0.22)', border: '1px solid rgba(59,130,246,0.40)', borderRadius: 10, padding: '8px 22px', fontSize: 13, color: '#93c5fd', cursor: 'pointer' }}>
-                    再試行
-                  </motion.button>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    {/* カメラ再初期化リトライ */}
+                    <motion.button
+                      whileTap={{ scale: 0.95 }}
+                      onClick={restartCamera}
+                      style={{ background: 'rgba(37,99,235,0.22)', border: '1px solid rgba(59,130,246,0.40)', borderRadius: 10, padding: '8px 22px', fontSize: 13, color: '#93c5fd', cursor: 'pointer' }}
+                    >
+                      カメラを再起動
+                    </motion.button>
+                    {/* ページリロード (完全リセット) */}
+                    <motion.button
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => window.location.reload()}
+                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, padding: '8px 22px', fontSize: 13, color: 'rgba(255,255,255,0.55)', cursor: 'pointer' }}
+                    >
+                      ページを更新
+                    </motion.button>
+                  </div>
                 </div>
               )}
 
