@@ -25,8 +25,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ja">
-      <body className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-        <main className="flex justify-center w-full min-h-screen px-4 py-8 md:py-12" style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))' }}>
+      <body className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white/90" style={{ colorScheme: 'dark', backgroundColor: '#0a0f1a' }}>
+        <main className="flex justify-center w-full min-h-screen px-4 py-8 md:py-12" style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))', backgroundColor: '#0a0f1a' }}>
           <div className="w-full max-w-[600px]">
             {children}
           </div>

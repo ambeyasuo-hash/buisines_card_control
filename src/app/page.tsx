@@ -7,7 +7,8 @@ import { IdentityPage } from '@/components/IdentityPage';
 import { Dashboard } from '@/components/Dashboard';
 import { SettingsPage } from '@/components/SettingsPage';
 import { PWAInstallGuide } from '@/components/PWAInstallGuide';
-import { Camera, List, Settings, ChevronLeft, CreditCard, LogOut, Contact } from 'lucide-react';
+import { BackButton } from '@/components/BackButton';
+import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-react';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
@@ -255,18 +256,10 @@ export default function Home() {
 
             {/* Sub-page Header */}
             <div
-              className="flex items-center gap-2 px-4 pt-4 pb-3.5"
+              className="flex items-center gap-3 px-4 pt-4 pb-3.5"
               style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <motion.button
-                whileHover={{ x: -3, backgroundColor: 'rgba(255,255,255,0.07)' }}
-                whileTap={{ scale: 0.92 }}
-                onClick={() => setActiveTab('dashboard')}
-                className="p-2 rounded-xl cursor-pointer"
-                style={{ color: 'rgba(255,255,255,0.55)' }}
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </motion.button>
+              <BackButton onClick={() => setActiveTab('dashboard')} />
               <h2 className="text-white font-semibold text-[15px]">
                 {SUB_PAGE_TITLES[activeTab]}
               </h2>

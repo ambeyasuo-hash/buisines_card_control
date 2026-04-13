@@ -4,9 +4,10 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronLeft, Camera, RotateCcw, Check, Zap,
+  Camera, RotateCcw, Check, Zap,
   User, Building2, Phone, Mail, MapPin, Briefcase, AlertCircle, ScanLine,
 } from 'lucide-react';
+import { BackButton } from '@/components/BackButton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // 404を物理的に排除: 全フェーズを同一ページ内で管理
@@ -242,22 +243,14 @@ export default function ScanPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full min-h-screen flex flex-col" style={{ background: '#0a0f1a' }}>
+    <div className="relative w-full h-[100svh] flex flex-col" style={{ background: '#0a0f1a' }}>
 
       {/* ── Header ── */}
       <div
-        className="flex items-center gap-2 px-4 pt-4 pb-3 z-20 relative"
+        className="flex items-center gap-3 px-4 pt-4 pb-3 z-20 flex-none"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
       >
-        <motion.button
-          whileHover={{ x: -3, backgroundColor: 'rgba(255,255,255,0.07)' }}
-          whileTap={{ scale: 0.92 }}
-          onClick={() => router.push('/')}
-          className="p-2 rounded-xl cursor-pointer"
-          style={{ color: 'rgba(255,255,255,0.55)' }}
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </motion.button>
+        <BackButton onClick={() => router.push('/')} />
         <div>
           <h2 className="text-white font-semibold text-[15px] leading-tight">名刺スキャン</h2>
           <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.32)' }}>{subtitle}</p>
@@ -265,7 +258,7 @@ export default function ScanPage() {
       </div>
 
       {/* ── Main Area ── */}
-      <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+      <div className="flex-1 relative overflow-hidden flex items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
         <AnimatePresence mode="wait">
 
           {/* ── CAMERA VIEW (initializing / ready / scanning) ── */}
@@ -468,7 +461,7 @@ export default function ScanPage() {
       </div>
 
       {/* ── Bottom Controls ── */}
-      <div className="z-20 relative px-6 pb-8 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="z-20 flex-none px-6 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
         <AnimatePresence mode="wait">
 
           {/* Ready: shutter */}

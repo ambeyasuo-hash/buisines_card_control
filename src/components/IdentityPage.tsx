@@ -34,7 +34,7 @@ export function IdentityPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-lg p-4" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
       {/* Profile Hero Card */}
       <motion.div
