@@ -91,8 +91,6 @@ export async function POST(request: Request): Promise<Response> {
       .single();
 
     if (error) {
-      console.error('[SaveBusinessCard] Supabase insert error:', error.code, error.message);
-
       // RLS / 認証エラーの分かりやすいメッセージ
       if (error.code === '42501' || error.message.includes('policy')) {
         return Response.json(
@@ -130,7 +128,6 @@ export async function POST(request: Request): Promise<Response> {
 
   } catch (err) {
     const error = err as Error;
-    console.error('[SaveBusinessCard] Error:', error.message);
     return Response.json(
       {
         ok: false,

@@ -46,7 +46,6 @@ export async function POST(request: Request): Promise<Response> {
     }
     baseUrl = baseUrl.replace(/\/$/, '');
 
-    console.log('[Azure Test] Testing endpoint:', baseUrl);
 
     // Azure Document Intelligence への POST リクエスト
     // 複数の API バージョンを試す
@@ -61,7 +60,6 @@ export async function POST(request: Request): Promise<Response> {
     for (const path of paths) {
       try {
         const testUrl = `${baseUrl}${path}`;
-        console.log('[Azure Test] Trying:', testUrl);
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -78,7 +76,6 @@ export async function POST(request: Request): Promise<Response> {
         });
 
         clearTimeout(timeoutId);
-        console.log('[Azure Test] Response status:', response.status);
 
         // 200-299: 成功
         if (response.status >= 200 && response.status < 300) {
@@ -147,7 +144,6 @@ export async function POST(request: Request): Promise<Response> {
         continue;
       } catch (err) {
         const error = err as Error;
-        console.log('[Azure Test] Fetch error:', error.message);
 
         // ネットワークエラー
         if (error.message.includes('ENOTFOUND') || error.message.includes('getaddrinfo')) {
@@ -230,7 +226,6 @@ export async function POST(request: Request): Promise<Response> {
     );
   } catch (err) {
     const error = err as Error;
-    console.error('[Azure Test] Error:', error);
 
     return Response.json(
       {

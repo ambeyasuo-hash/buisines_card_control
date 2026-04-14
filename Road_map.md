@@ -1,49 +1,124 @@
-Road_map.md: Business Card Folder (v5.0.5 Phoenix Edition)
-📌 開発戦略: 「段階的モック・ファースト」
-スレッド分離: 各フェーズ終了ごとにスレッド（会話）をリセットし、トークン上限を回避。
-コンテキスト最小化: 各スレッドの冒頭で design_doc.md と Road_map.md の当該箇所のみを読み込ませる。
-ロジック分離: UI（優しさ）とセキュリティ（堅牢性）を分けて実装し、最後に結合する。
-🛠 フェーズ 1: 基盤構築とデザインシステム (UI Mock-up)
-目的: 600px制限のUIを確定させ、ユーザー体験を可視化する。
+Roadmap.md: Business Card Folder (v5.0.7 Phoenix Edition)
+📌 開発戦略: 「アトミック・インテグレーション」
 
-Step 1-1: ディレクトリ構造の再定義と Shadcn UI / Tailwind のセットアップ。
+スレッド最適化: コンテキスト肥大化を防ぐため、1タスク完了ごとに新スレッドへの移行を推奨。
 
-Step 1-2: MobileContainer (最大600px中央寄せ) と共通レイアウトの実装。
+Zero-Knowledge 徹底: 暗号化・復号の主権は常にクライアント側に置く。
 
-Step 1-3: モック画面の実装 (静的データ)
-Identity Page (安部氏プロフ & vCard)
-Dashboard (カード一覧 & 検索バー)
-Scan UI (カメラ起動ダミー)
+リソース管理: iOS Safari等の特定環境におけるハードウェア解放を厳格に管理。
 
-Step 1-4: src/lib/normalize.ts の実装 (検索・正規化の核)
-🔐 フェーズ 2: セキュリティ・プロトコル (Robust Logic)
-目的: サーバーから中身が見えない「ゼロ知識証明」の暗号化基盤を作る。
+✅ フェーズ 1: 基盤構築とデザインシステム (Complete)
+[x] Step 1-1: ディレクトリ構造定義と Shadcn UI / Tailwind セットアップ。
 
-Step 2-1: src/lib/crypto.ts の実装 (AES-GCM / PBKDF2 / HMAC)。
+[x] Step 1-2: MobileContainer (最大600px中央寄せ) 実装。
 
-Step 2-2: 鍵生成プロセスの可視化アニメーション (UXコンテキスト)。
+[x] Step 1-3: Identity / Dashboard / Scan の各モック画面実装。
 
-Step 2-3: WebAuthn (メイン) と パスコード (フォールバック) の認証フロー構築。
-📡 フェーズ 3: データ・インテグレーション (Backend & OCR)
-目的: SupabaseとAzure OCRを連携させ、暗号化データを保存・検索可能にする。
+[x] Step 1-4: 検索・正規化用 normalize.ts の基礎実装。
 
-Step 3-1: Supabase テーブルスキーマの適用 (E2EE Zone / Analytics Zone)。
-Step 3-2: **[Update v5.0.6]** PWA基盤の実装 & Elegant Installation Guide。
-Step 3-3: Azure OCR (日本リージョン) による構造化データ抽出の実装。
+✅ フェーズ 2: セキュリティ・プロトコル (Complete)
+[x] Step 2-1: crypto.ts (AES-GCM / PBKDF2) による暗号化基盤の実装。
 
-Step 3-4: 抽出データの「ブラウザ側一括暗号化」と「ハッシュ分割送信」の実装。
-🚑 フェーズ 4: リカバリ・エクスペリエンス (Elegant Rescue)
-目的: 絶望を回避させる「隣人への優しさ」を実装する。
+[x] Step 2-2: 鍵管理フローの策定（localStorage 優先、環境変数非依存）。
 
-Step 4-1: 電話帳連携リカバリ機能 (vCard形式での「救済の鍵」出力)。
+[x] Step 2-3: 認証情報のクライアントサイド保持とリクエスト注入。
 
-Step 4-2: 認証失敗時のガイドUIの実装。
+📡 フェーズ 3: データ・インテグレーション & 安定化 (Current)
+目的: 実データと暗号化ロジックを統合し、実運用可能な「名刺管理」を完成させる。
 
-Step 4-3: 物理リカバリキー (24単語) の生成と整合性テスト。
-🚀 フェーズ 5: 最終調整とデプロイ
+[x] Step 3-1: Supabase クライアント最適化
 
-Step 5-1: 安部氏専用コンシェルジュ (NotebookLM) への導線設置。
+シングルトン化による重複インスタンス警告の解消。
 
-Step 5-2: Vercel デプロイと、シークレット環境変数の最終確認。
+auth: { storageKey: 'phoenix-auth-token' } による競合回避。
 
-Step 5-3: PII（個人情報）が平文で通信・保存されていないかの最終監査。
+[x] Step 3-2: カメラ制御の堅牢化 (iOS Ready)
+
+AnimatePresence 競合の解消と rAF リトライループの実装。
+
+再起動時の 80ms ディレイによるハードウェア解放待ち。
+
+[x] Step 3-3: ゼロ知識・一覧表示 (Zero-Knowledge List)
+
+取得した encrypted_data を端末内のマスターキーで復号・表示。
+
+復号失敗時のエラーハンドリングと、キャッシュ（no-store）の制御。
+
+[x] Step 3-4: Azure OCR パイプラインの最終化
+
+OCR抽出データから PII を除外した上での、クライアントサイド一括暗号化保存。
+
+✅ フェーズ 3.5: 検索・詳細表示・リカバリ (Optimize & Enhance) [COMPLETE]
+目的: Dashboard 検索ロジックの最適化、詳細表示モーダルの実装、リカバリ導線の強化。
+
+[x] Step 3.5-1: 検索ロジック最適化（normalize.ts の統合）
+
+大文字・小文字・全角・半角・日本語混在への対応。
+
+tokenizeForSearch による部分一致・トークンベース検索。
+
+[x] Step 3.5-2: 詳細表示モーダル（Detail View）の実装
+
+カードをタップして復号済み全フィールドを表示。
+
+コピー機能付き（Zero-Knowledge 維持）。
+
+[x] Step 3.5-3: リカバリ導線の強化
+
+Supabase 未設定時：設定画面へのボタン表示。
+
+エラー発生時：再試行 + 設定確認ボタン。
+
+✅ フェーズ 4: リカバリ & PWA (Complete)
+目的: 端末紛失・キー喪失時の救済と、オフライン利便性の向上。
+
+[x] Step 4-1: 検索・フィルタ精度の向上
+
+サーチハッシュの活用（サーバーサイド検索の最適化）。
+
+カテゴリフィルタ（industry_category の実装）。
+
+[ ] Step 4-2: PWA 基盤の実装 & マニフェスト設定。
+
+[x] Step 4-3: 物理リカバリキー (24単語) の生成とエクスポート。
+
+BIP-39 標準 (@scure/bip39) で AES-256 キー → 24単語シークレットフレーズへ変換。
+
+src/lib/mnemonic.ts に keyB64ToMnemonic / mnemonicToKeyB64 / isValidMnemonic を実装。
+
+フレーズの表示/非表示トグル、クリップボードコピーを IdentityPage に実装。
+
+[x] Step 4-4: 救済用 vCard 出力機能。
+
+vCard 3.0 形式（FN: あんべの名刺代わり・復号キー、NOTE: シークレットフレーズ）を生成。
+
+Web Share API (iOS Safari 対応) → ダウンロードのフォールバック で「連絡先に保存」を実装。
+
+[x] Step 4-5: 自分宛メール送信 (mailto) 機能。
+
+件名「【バックアップ】あんべの名刺代わり・復号キー」、フレーズ入り本文を mailto: で起動。
+
+クライアントサイド専用。Zero-Knowledge 厳守。
+
+🚀 フェーズ 5: 最終監査とデプロイ (In Progress — v5.0.8 Final Audit)
+目的: Phase 4 完了後、本番環境へのデプロイ前の最終検証と監査。
+
+[ ] Step 5-1: 開発ログクリーンアップ (Completed)
+[x] console.log / console.error 全除去
+[x] IdentityPage.tsx, save-business-card, azure/analyze, azure/test クリーン化
+
+[ ] Step 5-2: Zero-Knowledge 最終防衛検証 (Completed)
+[x] vCard 生成: 復号キー(mnemonic)のみ、PII 未含有 ✅
+[x] mailto: クライアント専用、平文送信なし ✅
+[x] クリップボードコピー: 復号キーのみ、PII 未含有 ✅
+[x] Dashboard 復号: localStorage キー使用、暗号化データのみ Supabase 送受信 ✅
+
+[ ] Step 5-3: PII（個人情報）漏洩がないかの通信トラフィック最終監査。
+
+Supabase API, Azure OCR への送信内容を再検証（暗号化済みデータのみ）。
+
+localStorage の ENCRYPTION_LS_KEY に秘密鍵が保持されることを確認。
+
+[ ] Step 5-4: Vercel Production デプロイ。
+
+main ブランチの最終確認、自動デプロイ検証。

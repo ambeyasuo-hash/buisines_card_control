@@ -345,7 +345,6 @@ export async function POST(request: Request): Promise<Response> {
 
   } catch (err) {
     const error = err as Error;
-    console.error('[Azure Analyze] Error:', error.message);
     return Response.json(
       {
         ok: false,
