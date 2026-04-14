@@ -15,6 +15,8 @@
  *   - ページ遷移 / リロード / タブ閉鎖時は自動クリア。
  */
 
+import { deriveWrappingKeyFromPIN, unwrapMasterKey } from './crypto';
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export type SessionState = 'LOCKED' | 'AUTHENTICATING' | 'UNLOCKED';
@@ -288,9 +290,6 @@ class AuthSessionManager {
   public async authenticateWithPIN(pin: string): Promise<boolean> {
     try {
       this.setState('AUTHENTICATING');
-
-      // Import crypto functions
-      const { deriveWrappingKeyFromPIN, unwrapMasterKey } = await import('./crypto');
 
       // Step 1: Get encryption salt from localStorage
       const encryptionSalt = localStorage.getItem('encryption_salt');
