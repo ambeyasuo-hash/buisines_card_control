@@ -436,7 +436,8 @@ export default function ScanPage() {
       const data = await res.json() as { ok: boolean; id?: string; error?: string };
 
       if (data.ok && data.id) {
-        // 保存成功 → 一覧タブに直接遷移（?tab=list で Dashboard が開く）
+        // Next.js サーバーサイドキャッシュをバイパスしてから一覧タブへ遷移
+        router.refresh();
         router.push('/?tab=list');
       } else {
         setSaveError(data.error ?? '保存に失敗しました。もう一度お試しください。');
