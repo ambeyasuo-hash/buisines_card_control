@@ -5,8 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
   Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
-  Copy, Code2, ChevronDown, Shield, Download, RefreshCw,
+  Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone,
 } from 'lucide-react';
+import { DevicePairingModal } from './DevicePairingModal';
 import {
   checkSupabaseConnection,
   checkAzureConnectionViaServer,
@@ -1173,6 +1174,7 @@ export function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast]     = useState<{ type: ToastType; message: string } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [showDevicePairingModal, setShowDevicePairingModal] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -1687,6 +1689,51 @@ export function SettingsPage() {
         <EncryptionKeySection />
       </motion.div>
 
+      {/* ═══ 5. Device Pairing (Phase 7) ═══ */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.26, duration: 0.24 }}
+        style={{
+          background: 'linear-gradient(150deg, rgba(59,130,246,0.12) 0%, rgba(34,197,94,0.06) 100%)',
+          border: '1px solid rgba(59,130,246,0.25)', borderRadius: '12px', padding: '16px',
+          display: 'flex', flexDirection: 'column', gap: '12px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Smartphone style={{ width: '16px', height: '16px', color: 'rgba(96,165,250,0.75)' }} />
+          <span style={{
+            fontSize: '13px', fontWeight: 600,
+            color: 'rgba(255,255,255,0.75)' }}>
+            複数端末での同期
+          </span>
+        </div>
+
+        <p style={{
+          fontSize: '12px', color: 'rgba(255,255,255,0.60)', lineHeight: '1.5',
+          margin: '0 0 8px 0',
+        }}>
+          スマートフォンと PC など、複数のデバイスであんべを使う場合、QR コードで端末をペアリングして、安全にデータを同期できます。
+        </p>
+
+        <motion.button
+          whileHover={{ y: -2, boxShadow: '0 8px 20px rgba(59,130,246,0.2)' }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setShowDevicePairingModal(true)}
+          type="button"
+          style={{
+            background: 'linear-gradient(135deg, rgba(59,130,246,0.6) 0%, rgba(34,197,94,0.4) 100%)',
+            border: '1px solid rgba(96,165,250,0.4)',
+            color: 'rgba(255,255,255,0.85)',
+            padding: '10px 16px', borderRadius: '10px',
+            fontSize: '13px', fontWeight: 500,
+            cursor: 'pointer', transition: 'all 0.2s ease',
+          }}
+        >
+          + 端末をペアリング
+        </motion.button>
+      </motion.div>
+
       {/* ═══ Danger: Clear All ═══ */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -1717,6 +1764,17 @@ export function SettingsPage() {
           クリア
         </motion.button>
       </motion.div>
+
+      {/* Device Pairing Modal */}
+      {showDevicePairingModal && (
+        <DevicePairingModal
+          onClose={() => setShowDevicePairingModal(false)}
+          onPairingComplete={() => {
+            setShowDevicePairingModal(false);
+            showToast('success', 'ペアリング完了しました！');
+          }}
+        />
+      )}
 
     </div>
   );
