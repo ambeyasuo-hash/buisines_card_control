@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
   Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
-  Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone,
+  Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone, Mail,
 } from 'lucide-react';
 import { DevicePairingModal } from './DevicePairingModal';
 import {
@@ -21,6 +21,9 @@ import {
 import { getOrCreateEncryptionKey, generateEncryptionKey, exportKeyAsBase64, ENCRYPTION_LS_KEY } from '@/lib/crypto';
 import { shareOrDownloadVCF } from '@/lib/vcf';
 import { invalidateSupabaseClient } from '@/lib/supabase-client';
+import { keyB64ToMnemonic } from '@/lib/mnemonic';
+import { useFontSize } from '@/lib/font-size-context';
+import { AlertTriangle as AlertTriangleIcon } from 'lucide-react';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -31,6 +34,7 @@ const LS = {
   azureRegion:      'azure_ocr_region',
   geminiKey:        'gemini_api_key',
   fontSize:         'app_font_size',
+  userEmail:        'user_email',
 } as const;
 
 // ─── Font size options ────────────────────────────────────────────────────────
@@ -109,6 +113,7 @@ interface FormState {
   azureKey:        string;
   azureRegion:     string;
   geminiKey:       string;
+  userEmail:       string;
 }
 
 type ValidationState = Record<keyof FormState, 'valid' | 'invalid' | 'empty'>;
@@ -127,9 +132,10 @@ function loadStorage(): FormState {
       azureKey:        localStorage.getItem(LS.azureKey)        ?? '',
       azureRegion:     localStorage.getItem(LS.azureRegion)     ?? 'japaneast',
       geminiKey:       localStorage.getItem(LS.geminiKey)       ?? '',
+      userEmail:       localStorage.getItem(LS.userEmail)       ?? '',
     };
   } catch {
-    return { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '' };
+    return { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '', userEmail: '' };
   }
 }
 
@@ -141,6 +147,7 @@ function saveStorage(f: FormState) {
     [LS.azureKey]:        f.azureKey.trim(),
     [LS.azureRegion]:     f.azureRegion.trim(),
     [LS.geminiKey]:       f.geminiKey.trim(),
+    [LS.userEmail]:       f.userEmail.trim(),
   }).forEach(([k, v]) => {
     if (v) localStorage.setItem(k, v);
     else localStorage.removeItem(k);
@@ -149,7 +156,7 @@ function saveStorage(f: FormState) {
 
 function allEmpty(f: FormState) {
   return !f.supabaseUrl.trim() && !f.supabaseAnonKey.trim() &&
-         !f.azureEndpoint.trim() && !f.azureKey.trim() && !f.geminiKey.trim();
+         !f.azureEndpoint.trim() && !f.azureKey.trim() && !f.geminiKey.trim() && !f.userEmail.trim();
 }
 
 function computeValidation(f: FormState): ValidationState {
@@ -160,6 +167,7 @@ function computeValidation(f: FormState): ValidationState {
     azureKey: !f.azureKey.trim() ? 'empty' : validateAzureKey(f.azureKey) ? 'valid' : 'invalid',
     azureRegion: f.azureRegion ? 'valid' : 'empty',
     geminiKey: !f.geminiKey.trim() ? 'empty' : validateGeminiKey(f.geminiKey) ? 'valid' : 'invalid',
+    userEmail: !f.userEmail.trim() ? 'empty' : (f.userEmail.includes('@') ? 'valid' : 'invalid'),
   };
 }
 
@@ -167,6 +175,18 @@ function hasValidPair(f: FormState, v: ValidationState): boolean {
   return (v.supabaseUrl === 'valid' && v.supabaseAnonKey === 'valid') ||
          (v.azureEndpoint === 'valid' && v.azureKey === 'valid') ||
          (v.geminiKey === 'valid');
+}
+
+function isSupabaseComplete(f: FormState, v: ValidationState): boolean {
+  return v.supabaseUrl === 'valid' && v.supabaseAnonKey === 'valid';
+}
+
+function isAzureComplete(f: FormState, v: ValidationState): boolean {
+  return v.azureEndpoint === 'valid' && v.azureKey === 'valid' && v.azureRegion === 'valid';
+}
+
+function isGeminiComplete(f: FormState, v: ValidationState): boolean {
+  return v.geminiKey === 'valid';
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -1073,6 +1093,188 @@ function SectionHeader({
   );
 }
 
+/** Backup Key Display Component */
+function BackupKeyDisplay({ userEmail }: { userEmail: string }) {
+  const [mnemonic, setMnemonic] = useState<string>('');
+  const [copied, setCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    try {
+      const keyB64 = localStorage.getItem(ENCRYPTION_LS_KEY);
+      if (keyB64) {
+        setMnemonic(keyB64ToMnemonic(keyB64));
+      }
+    } catch (error) {
+      console.error('Failed to generate mnemonic:', error);
+    }
+    setMounted(true);
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mnemonic).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleVCFExport = async () => {
+    try {
+      const keyB64 = localStorage.getItem(ENCRYPTION_LS_KEY);
+      if (!keyB64) {
+        alert('暗号化キーが見つかりません');
+        return;
+      }
+      await shareOrDownloadVCF(keyB64);
+    } catch (error) {
+      alert('エクスポートに失敗しました: ' + String(error));
+    }
+  };
+
+  const handleMailto = () => {
+    if (!mnemonic) {
+      alert('バックアップキーが見つかりません');
+      return;
+    }
+    const subject = encodeURIComponent('【バックアップ】あんべの名刺代わり・復号キー');
+    const body = encodeURIComponent([
+      'あんべの名刺代わり — 復号キー バックアップ',
+      '',
+      '■ シークレットフレーズ（24単語）',
+      mnemonic,
+      '',
+      '※ このメールはクライアント側で生成されたもので、サーバーを経由していません。',
+      '※ 重要な情報のため、安全な場所に保管してください。',
+    ].join('\n'));
+    const mailto = `mailto:${userEmail ? userEmail : ''}?subject=${subject}&body=${body}`;
+    window.location.href = mailto;
+  };
+
+  if (!mounted) return null;
+
+  return (
+    <div>
+      {mnemonic ? (
+        <>
+          {/* 24単語表示エリア */}
+          <div style={{
+            background: 'rgba(0,0,0,0.20)',
+            border: '1px solid rgba(168,85,247,0.20)',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '12px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.70)',
+            wordBreak: 'break-all',
+            lineHeight: '1.6',
+            minHeight: '60px',
+          }}>
+            {mnemonic}
+          </div>
+
+          {/* ボタングループ */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleCopy}
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 500,
+                background: copied ? 'rgba(16,185,129,0.20)' : 'rgba(168,85,247,0.15)',
+                border: copied ? '1px solid rgba(52,211,153,0.35)' : '1px solid rgba(192,132,250,0.30)',
+                color: copied ? '#6ee7b7' : '#e9d5ff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+              }}
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? 'コピー済み' : 'コピー'}
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleVCFExport}
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 500,
+                background: 'rgba(59,130,246,0.15)',
+                border: '1px solid rgba(96,165,250,0.30)',
+                color: '#93c5fd',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+              }}
+            >
+              <Download size={14} />
+              電話帳に保存
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleMailto}
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 500,
+                background: 'rgba(251,191,36,0.15)',
+                border: '1px solid rgba(251,191,36,0.30)',
+                color: '#fcd34d',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+              }}
+            >
+              <Mail size={14} />
+              メールで送信
+            </motion.button>
+          </div>
+
+          <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', marginTop: '8px', lineHeight: '1.5' }}>
+            ⚠️ <strong>24単語は極秘情報です。</strong>このシークレットフレーズがあれば、端末紛失時にもデータを復旧できます。安全な場所に保管してください。
+          </p>
+        </>
+      ) : (
+        <div style={{
+          background: 'rgba(239,68,68,0.10)',
+          border: '1px solid rgba(239,68,68,0.20)',
+          borderRadius: '8px',
+          padding: '12px',
+          color: 'rgba(255,255,255,0.50)',
+          fontSize: '12px',
+          textAlign: 'center',
+        }}>
+          バックアップキーが設定されていません。アプリを初回起動時に設定してください。
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Font size selector with segmented control style */
 function FontSizeSelector() {
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large' | 'extra-large'>('medium');
@@ -1152,13 +1354,16 @@ function FontSizeSelector() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function SettingsPage() {
   const [form, setForm] = useState<FormState>({
-    supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '',
+    supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '', userEmail: '',
   });
   const [vis, setVis] = useState<VisibilityState>({
     supabaseAnonKey: false, azureKey: false, geminiKey: false,
   });
+  const [expandedSections, setExpandedSections] = useState<Record<'supabase' | 'azure' | 'gemini', boolean>>({
+    supabase: true, azure: true, gemini: true,
+  });
   const [validation, setValidation] = useState<ValidationState>({
-    supabaseUrl: 'empty', supabaseAnonKey: 'empty', azureEndpoint: 'empty', azureKey: 'empty', azureRegion: 'empty', geminiKey: 'empty',
+    supabaseUrl: 'empty', supabaseAnonKey: 'empty', azureEndpoint: 'empty', azureKey: 'empty', azureRegion: 'empty', geminiKey: 'empty', userEmail: 'empty',
   });
   const [connStatus, setConnStatus] = useState<ConnectionStatus>({
     supabase: 'idle', azure: 'idle', gemini: 'idle',
@@ -1316,7 +1521,7 @@ export function SettingsPage() {
     } catch { /* ignore */ }
     // Supabase シングルトンキャッシュを破棄（古い認証情報が残らないようにする）
     invalidateSupabaseClient();
-    const cleared = { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '' };
+    const cleared = { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '', userEmail: '' };
     setForm(cleared);
     setValidation(computeValidation(cleared));
     setConnStatus({ supabase: 'idle', azure: 'idle', gemini: 'idle' });
@@ -1332,190 +1537,343 @@ export function SettingsPage() {
       {toast && <Toast type={toast.type} message={toast.message} visible={toastVisible} />}
 
       {/* ═══ 1. Supabase ═══ */}
-      <SectionCard
-        delay={0}
-        accent={{
-          bg: 'linear-gradient(150deg, rgba(37,99,235,0.14) 0%, rgba(29,78,216,0.06) 100%)',
-          border: 'rgba(59,130,246,0.26)',
+      <details
+        open={expandedSections.supabase}
+        onToggle={(e) => setExpandedSections(prev => ({ ...prev, supabase: e.currentTarget.open }))}
+        style={{
+          background: 'linear-gradient(150deg, rgba(37,99,235,0.14) 0%, rgba(29,78,216,0.06) 100%)',
+          border: '1px solid rgba(59,130,246,0.26)',
+          borderRadius: '12px',
+          cursor: 'pointer',
         }}
       >
-        <SectionHeader
-          icon={Database}
-          title="Supabase 接続設定"
-          subtitle="名刺データの保存・認証に使用"
-          iconBg="rgba(37,99,235,0.28)"
-          iconBorder="rgba(96,165,250,0.40)"
-          iconColor="#93c5fd"
-        />
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div>
-            <FieldLabelWithLink
-              label="NEXT_PUBLIC_SUPABASE_URL"
-              helpText={API_CONFIG.supabase.helpTexts.url}
-              externalUrl={API_CONFIG.supabase.url}
-            />
-            <TextInput
-              id="supabase-url"
-              type="url"
-              value={form.supabaseUrl}
-              onChange={field('supabaseUrl')}
-              placeholder="https://xxxxxxxxxxxx.supabase.co"
-              validationState={validation.supabaseUrl}
-            />
-          </div>
-          <div>
-            <FieldLabelWithLink
-              label="NEXT_PUBLIC_SUPABASE_ANON_KEY"
-              helpText={API_CONFIG.supabase.helpTexts.anonKey}
-              externalUrl={API_CONFIG.supabase.url}
-            />
-            <SecretInput
-              id="supabase-anon"
-              value={form.supabaseAnonKey}
-              onChange={field('supabaseAnonKey')}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              visible={vis.supabaseAnonKey}
-              onToggle={() => toggleVis('supabaseAnonKey')}
-              validationState={validation.supabaseAnonKey}
-            />
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
-              <TestButton
-                onClick={testSupabase}
-                status={testStatus.supabase}
-                disabled={validation.supabaseUrl !== 'valid' || validation.supabaseAnonKey !== 'valid'}
-              />
-              {validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid' && (
-                <ConnectionIndicator status={connStatus.supabase} label="保存時に確認済み" />
-              )}
+        <summary
+          style={{
+            padding: '12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            listStyle: 'none',
+            userSelect: 'none',
+          }}
+        >
+          <motion.div animate={{ rotate: expandedSections.supabase ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={18} color="rgba(255,255,255,0.40)" />
+          </motion.div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '11px',
+                background: 'rgba(37,99,235,0.28)',
+                border: '1px solid rgba(96,165,250,0.40)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Database size={18} color="#93c5fd" />
             </div>
-            <TestResult result={testMessages.supabase} show={testStatus.supabase !== 'idle'} />
-
-            {/* SQL Schema section */}
-            {form.supabaseUrl.trim() && <SQLSchemaSection supabaseUrl={form.supabaseUrl} />}
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'rgba(255,255,255,0.90)' }}>Supabase 接続設定</div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)' }}>名刺データの保存・認証に使用</div>
+            </div>
           </div>
-        </div>
-      </SectionCard>
+          {isSupabaseComplete(form, validation) && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              background: 'rgba(16,185,129,0.20)',
+              border: '1px solid rgba(52,211,153,0.35)',
+              marginLeft: '8px',
+            }}>
+              <Check size={12} color="#6ee7b7" />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#6ee7b7' }}>設定済み</span>
+            </div>
+          )}
+        </summary>
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: expandedSections.supabase ? 1 : 0, height: expandedSections.supabase ? 'auto' : 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ overflow: 'hidden', padding: '16px 18px' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <FieldLabelWithLink
+                label="NEXT_PUBLIC_SUPABASE_URL"
+                helpText={API_CONFIG.supabase.helpTexts.url}
+                externalUrl={API_CONFIG.supabase.url}
+              />
+              <TextInput
+                id="supabase-url"
+                type="url"
+                value={form.supabaseUrl}
+                onChange={field('supabaseUrl')}
+                placeholder="https://xxxxxxxxxxxx.supabase.co"
+                validationState={validation.supabaseUrl}
+              />
+            </div>
+            <div>
+              <FieldLabelWithLink
+                label="NEXT_PUBLIC_SUPABASE_ANON_KEY"
+                helpText={API_CONFIG.supabase.helpTexts.anonKey}
+                externalUrl={API_CONFIG.supabase.url}
+              />
+              <SecretInput
+                id="supabase-anon"
+                value={form.supabaseAnonKey}
+                onChange={field('supabaseAnonKey')}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                visible={vis.supabaseAnonKey}
+                onToggle={() => toggleVis('supabaseAnonKey')}
+                validationState={validation.supabaseAnonKey}
+              />
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                <TestButton
+                  onClick={testSupabase}
+                  status={testStatus.supabase}
+                  disabled={validation.supabaseUrl !== 'valid' || validation.supabaseAnonKey !== 'valid'}
+                />
+                {validation.supabaseUrl === 'valid' && validation.supabaseAnonKey === 'valid' && (
+                  <ConnectionIndicator status={connStatus.supabase} label="保存時に確認済み" />
+                )}
+              </div>
+              <TestResult result={testMessages.supabase} show={testStatus.supabase !== 'idle'} />
+
+              {/* SQL Schema section */}
+              {form.supabaseUrl.trim() && <SQLSchemaSection supabaseUrl={form.supabaseUrl} />}
+            </div>
+          </div>
+        </motion.div>
+      </details>
 
       {/* ═══ 2. Azure AI Vision (OCR) ═══ */}
-      <SectionCard
-        delay={0.06}
-        accent={{
-          bg: 'linear-gradient(150deg, rgba(245,158,11,0.13) 0%, rgba(217,119,6,0.05) 100%)',
-          border: 'rgba(245,158,11,0.26)',
+      <details
+        open={expandedSections.azure}
+        onToggle={(e) => setExpandedSections(prev => ({ ...prev, azure: e.currentTarget.open }))}
+        style={{
+          background: 'linear-gradient(150deg, rgba(245,158,11,0.13) 0%, rgba(217,119,6,0.05) 100%)',
+          border: '1px solid rgba(245,158,11,0.26)',
+          borderRadius: '12px',
+          cursor: 'pointer',
         }}
       >
-        <SectionHeader
-          icon={ScanLine}
-          title="Azure AI Vision (OCR)"
-          subtitle="名刺の文字を読み取り・構造化するエンジン"
-          iconBg="rgba(245,158,11,0.25)"
-          iconBorder="rgba(251,191,36,0.38)"
-          iconColor="#fcd34d"
-        />
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div>
-            <FieldLabelWithLink
-              label="AZURE_OCR_ENDPOINT"
-              helpText={API_CONFIG.azure.helpTexts.endpoint}
-              externalUrl={API_CONFIG.azure.url}
-            />
-            <TextInput
-              id="azure-endpoint"
-              type="url"
-              value={form.azureEndpoint}
-              onChange={field('azureEndpoint')}
-              placeholder="https://your-resource.cognitiveservices.azure.com/"
-              validationState={validation.azureEndpoint}
-            />
-          </div>
-          <div>
-            <FieldLabelWithLink
-              label="AZURE_OCR_KEY"
-              helpText={API_CONFIG.azure.helpTexts.key}
-              externalUrl={API_CONFIG.azure.url}
-            />
-            <SecretInput
-              id="azure-key"
-              value={form.azureKey}
-              onChange={field('azureKey')}
-              placeholder="32文字の英数字キー..."
-              visible={vis.azureKey}
-              onToggle={() => toggleVis('azureKey')}
-              validationState={validation.azureKey}
-            />
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
-              <TestButton
-                onClick={testAzure}
-                status={testStatus.azure}
-                disabled={validation.azureEndpoint !== 'valid' || validation.azureKey !== 'valid'}
-              />
-              {validation.azureEndpoint === 'valid' && validation.azureKey === 'valid' && (
-                <ConnectionIndicator status={connStatus.azure} label="保存時に確認済み" />
-              )}
+        <summary
+          style={{
+            padding: '12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            listStyle: 'none',
+            userSelect: 'none',
+          }}
+        >
+          <motion.div animate={{ rotate: expandedSections.azure ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={18} color="rgba(255,255,255,0.40)" />
+          </motion.div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '11px',
+                background: 'rgba(245,158,11,0.25)',
+                border: '1px solid rgba(251,191,36,0.38)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ScanLine size={18} color="#fcd34d" />
             </div>
-            <TestResult result={testMessages.azure} show={testStatus.azure !== 'idle'} />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'rgba(255,255,255,0.90)' }}>Azure AI Vision (OCR)</div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)' }}>名刺の文字を読み取り・構造化するエンジン</div>
+            </div>
           </div>
-          <div>
-            <FieldLabelWithLink
-              label="AZURE_OCR_REGION"
-              helpText={API_CONFIG.azure.helpTexts.region}
-            />
-            <SelectInput
-              id="azure-region"
-              value={form.azureRegion}
-              onChange={field('azureRegion')}
-              options={AZURE_REGIONS}
-            />
+          {isAzureComplete(form, validation) && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              background: 'rgba(16,185,129,0.20)',
+              border: '1px solid rgba(52,211,153,0.35)',
+              marginLeft: '8px',
+            }}>
+              <Check size={12} color="#6ee7b7" />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#6ee7b7' }}>設定済み</span>
+            </div>
+          )}
+        </summary>
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: expandedSections.azure ? 1 : 0, height: expandedSections.azure ? 'auto' : 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ overflow: 'hidden', padding: '16px 18px' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <FieldLabelWithLink
+                label="AZURE_OCR_ENDPOINT"
+                helpText={API_CONFIG.azure.helpTexts.endpoint}
+                externalUrl={API_CONFIG.azure.url}
+              />
+              <TextInput
+                id="azure-endpoint"
+                type="url"
+                value={form.azureEndpoint}
+                onChange={field('azureEndpoint')}
+                placeholder="https://your-resource.cognitiveservices.azure.com/"
+                validationState={validation.azureEndpoint}
+              />
+            </div>
+            <div>
+              <FieldLabelWithLink
+                label="AZURE_OCR_KEY"
+                helpText={API_CONFIG.azure.helpTexts.key}
+                externalUrl={API_CONFIG.azure.url}
+              />
+              <SecretInput
+                id="azure-key"
+                value={form.azureKey}
+                onChange={field('azureKey')}
+                placeholder="32文字の英数字キー..."
+                visible={vis.azureKey}
+                onToggle={() => toggleVis('azureKey')}
+                validationState={validation.azureKey}
+              />
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                <TestButton
+                  onClick={testAzure}
+                  status={testStatus.azure}
+                  disabled={validation.azureEndpoint !== 'valid' || validation.azureKey !== 'valid'}
+                />
+                {validation.azureEndpoint === 'valid' && validation.azureKey === 'valid' && (
+                  <ConnectionIndicator status={connStatus.azure} label="保存時に確認済み" />
+                )}
+              </div>
+              <TestResult result={testMessages.azure} show={testStatus.azure !== 'idle'} />
+            </div>
+            <div>
+              <FieldLabelWithLink
+                label="AZURE_OCR_REGION"
+                helpText={API_CONFIG.azure.helpTexts.region}
+              />
+              <SelectInput
+                id="azure-region"
+                value={form.azureRegion}
+                onChange={field('azureRegion')}
+                options={AZURE_REGIONS}
+              />
+            </div>
           </div>
-        </div>
-      </SectionCard>
+        </motion.div>
+      </details>
 
       {/* ═══ 3. Gemini API ═══ */}
-      <SectionCard
-        delay={0.12}
-        accent={{
-          bg: 'linear-gradient(150deg, rgba(139,92,246,0.14) 0%, rgba(109,40,217,0.06) 100%)',
-          border: 'rgba(139,92,246,0.26)',
+      <details
+        open={expandedSections.gemini}
+        onToggle={(e) => setExpandedSections(prev => ({ ...prev, gemini: e.currentTarget.open }))}
+        style={{
+          background: 'linear-gradient(150deg, rgba(139,92,246,0.14) 0%, rgba(109,40,217,0.06) 100%)',
+          border: '1px solid rgba(139,92,246,0.26)',
+          borderRadius: '12px',
+          cursor: 'pointer',
         }}
       >
-        <SectionHeader
-          icon={Sparkles}
-          title="Gemini API"
-          subtitle="お礼メール自動生成・AI コンシェルジュに使用"
-          iconBg="rgba(139,92,246,0.28)"
-          iconBorder="rgba(167,139,250,0.38)"
-          iconColor="#c4b5fd"
-        />
-        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <FieldLabelWithLink
-              label="GEMINI_API_KEY"
-              helpText={API_CONFIG.gemini.helpTexts.key}
-              externalUrl={API_CONFIG.gemini.url}
-            />
-            <SecretInput
-              id="gemini-key"
-              value={form.geminiKey}
-              onChange={field('geminiKey')}
-              placeholder="AIza..."
-              visible={vis.geminiKey}
-              onToggle={() => toggleVis('geminiKey')}
-              validationState={validation.geminiKey}
-            />
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
-              <TestButton
-                onClick={testGemini}
-                status={testStatus.gemini}
-                disabled={validation.geminiKey !== 'valid'}
-              />
-              {validation.geminiKey === 'valid' && (
-                <ConnectionIndicator status={connStatus.gemini} label="保存時に確認済み" />
-              )}
+        <summary
+          style={{
+            padding: '12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            listStyle: 'none',
+            userSelect: 'none',
+          }}
+        >
+          <motion.div animate={{ rotate: expandedSections.gemini ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={18} color="rgba(255,255,255,0.40)" />
+          </motion.div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '11px',
+                background: 'rgba(139,92,246,0.28)',
+                border: '1px solid rgba(167,139,250,0.38)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Sparkles size={18} color="#c4b5fd" />
             </div>
-            <TestResult result={testMessages.gemini} show={testStatus.gemini !== 'idle'} />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'rgba(255,255,255,0.90)' }}>Gemini API</div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)' }}>お礼メール自動生成・AI コンシェルジュに使用</div>
+            </div>
           </div>
-        </div>
-      </SectionCard>
+          {isGeminiComplete(form, validation) && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              background: 'rgba(16,185,129,0.20)',
+              border: '1px solid rgba(52,211,153,0.35)',
+              marginLeft: '8px',
+            }}>
+              <Check size={12} color="#6ee7b7" />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#6ee7b7' }}>設定済み</span>
+            </div>
+          )}
+        </summary>
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: expandedSections.gemini ? 1 : 0, height: expandedSections.gemini ? 'auto' : 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ overflow: 'hidden', padding: '16px 18px' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+              <FieldLabelWithLink
+                label="GEMINI_API_KEY"
+                helpText={API_CONFIG.gemini.helpTexts.key}
+                externalUrl={API_CONFIG.gemini.url}
+              />
+              <SecretInput
+                id="gemini-key"
+                value={form.geminiKey}
+                onChange={field('geminiKey')}
+                placeholder="AIza..."
+                visible={vis.geminiKey}
+                onToggle={() => toggleVis('geminiKey')}
+                validationState={validation.geminiKey}
+              />
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                <TestButton
+                  onClick={testGemini}
+                  status={testStatus.gemini}
+                  disabled={validation.geminiKey !== 'valid'}
+                />
+                {validation.geminiKey === 'valid' && (
+                  <ConnectionIndicator status={connStatus.gemini} label="保存時に確認済み" />
+                )}
+              </div>
+              <TestResult result={testMessages.gemini} show={testStatus.gemini !== 'idle'} />
+            </div>
+          </div>
+        </motion.div>
+      </details>
 
       {/* ═══ Font Size ═══ */}
       <SectionCard
@@ -1535,6 +1893,70 @@ export function SettingsPage() {
         />
         <FontSizeSelector />
       </SectionCard>
+
+      {/* ═══ User Email & Backup Identity ═══ */}
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18, duration: 0.26, ease: 'easeOut' }}
+        style={{
+          background: 'linear-gradient(150deg, rgba(168,85,247,0.14) 0%, rgba(126,34,206,0.06) 100%)',
+          border: '1px solid rgba(168,85,247,0.26)',
+          borderRadius: '12px',
+          padding: '16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '14px' }}>
+          <div style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: '11px',
+            background: 'rgba(168,85,247,0.28)',
+            border: '1px solid rgba(192,132,250,0.40)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Shield size={18} color="#e9d5ff" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'rgba(255,255,255,0.90)' }}>
+              緊急時のリカバリ
+            </div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)' }}>
+              24単語のバックアップキーを複数の場所に保存できます
+            </div>
+          </div>
+        </div>
+
+        {/* User Email Input */}
+        <div style={{ marginBottom: '14px' }}>
+          <label style={{
+            display: 'block',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: 'rgba(255,255,255,0.60)',
+            marginBottom: '6px',
+          }}>
+            メールアドレス（バックアップ送信先）
+          </label>
+          <TextInput
+            id="user-email"
+            type="email"
+            value={form.userEmail}
+            onChange={field('userEmail')}
+            placeholder="your-email@example.com"
+            validationState={form.userEmail.trim() ? (form.userEmail.includes('@') ? 'valid' : 'invalid') : 'empty'}
+          />
+          <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', marginTop: '4px' }}>
+            ※ メール送信時に自動入力されます
+          </p>
+        </div>
+
+        {/* Backup Key Display */}
+        <BackupKeyDisplay userEmail={form.userEmail} />
+      </motion.div>
 
       {/* ═══ Info banner ═══ */}
       <motion.div
