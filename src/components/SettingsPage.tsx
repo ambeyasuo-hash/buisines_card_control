@@ -1539,13 +1539,13 @@ export function SettingsPage() {
         open={expandedSections.supabase}
         onToggle={(e) => {
           // ═══════════════════════════════════════════════════════════════════
-          // Null-safe details toggle handler
-          // Safely extract 'open' property from HTMLDetailsElement
+          // Type-safe details toggle handler with explicit boolean cast
           // ═══════════════════════════════════════════════════════════════════
           try {
             const target = e?.currentTarget as unknown;
             if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
-              setExpandedSections(prev => ({ ...prev, supabase: target.open }));
+              const isOpen = (target as { open: boolean }).open;
+              setExpandedSections(prev => ({ ...prev, supabase: isOpen }));
             }
           } catch (err) {
             // Silently ignore errors, state remains unchanged
@@ -1670,7 +1670,8 @@ export function SettingsPage() {
           try {
             const target = e?.currentTarget as unknown;
             if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
-              setExpandedSections(prev => ({ ...prev, azure: target.open }));
+              const isOpen = (target as { open: boolean }).open;
+              setExpandedSections(prev => ({ ...prev, azure: isOpen }));
             }
           } catch (err) {
             // Silently ignore errors
@@ -1804,7 +1805,8 @@ export function SettingsPage() {
           try {
             const target = e?.currentTarget as unknown;
             if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
-              setExpandedSections(prev => ({ ...prev, gemini: target.open }));
+              const isOpen = (target as { open: boolean }).open;
+              setExpandedSections(prev => ({ ...prev, gemini: isOpen }));
             }
           } catch (err) {
             // Silently ignore errors
