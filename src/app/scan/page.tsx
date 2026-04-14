@@ -98,34 +98,8 @@ export default function ScanPage() {
   const [isSaving,       setIsSaving]       = useState(false);
   const [saveError,      setSaveError]      = useState<string | null>(null);
 
-  // ── 1. Orientation lock & monitoring ─────────────────────────────────────
-
-  /**
-   * scanState に応じて orientation lock を動的制御
-   * - scanning 中のみ横持ちを強制 (lock)
-   * - 撮影完了後 (preview/analyzing/result) は自由な向きを許可 (unlock)
-   * - PortraitWarning は常時表示（情報提示のため）
-   */
-  useEffect(() => {
-    if (typeof screen === 'undefined' || !screen.orientation) return;
-
-    const attemptLockUnlock = async () => {
-      try {
-        if (scanState === 'scanning') {
-          // 撮影中のみ横持ちを強制
-          await (screen.orientation as ScreenOrientation & { lock: (o: string) => Promise<void> }).lock('landscape');
-        } else {
-          // 撮影完了後は自由な向きを許可
-          screen.orientation.unlock();
-        }
-      } catch {
-        // iOS など lock/unlock 非対応ブラウザは無視
-      }
-    };
-
-    attemptLockUnlock();
-  }, [scanState]);
-
+  // ── 1. Orientation monitoring ─────────────────────────────────────
+  // 画面の向きを検知してガイド枠の向きを自動追従
   useEffect(() => {
     const check = () => setIsPortrait(window.innerWidth < window.innerHeight);
     check();
@@ -523,48 +497,6 @@ export default function ScanPage() {
         background: '#0a0f1a', overflow: 'hidden',
       }}
     >
-      {/* ── Portrait Warning Overlay ── */}
-      {/* isCamera のとき (撮影中) のみ表示。プレビュー以降は自由な向きを許可 */}
-      <AnimatePresence>
-        {isPortrait && isCamera && (
-          <motion.div
-            key="portrait-warn"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            style={{
-              position: 'absolute', inset: 0, zIndex: 200,
-              background: 'rgba(8,12,22,0.96)',
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              gap: 20, padding: 32, textAlign: 'center',
-            }}
-          >
-            <motion.div
-              animate={{ rotate: [0, 90, 90, 0] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-              style={{
-                width: 72, height: 72, borderRadius: 22,
-                background: 'rgba(59,130,246,0.20)',
-                border: '1px solid rgba(96,165,250,0.45)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <FlipHorizontal2 style={{ width: 32, height: 32, color: '#93c5fd' }} />
-            </motion.div>
-            <div>
-              <p style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.92)', marginBottom: 8 }}>
-                端末を横にしてください
-              </p>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
-                名刺をより正確に読み取るため<br />
-                横持ち (ランドスケープ) での撮影を推奨しています
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ══════════════════════════════════════════════════════════
           メインエリア — カメラ / プレビュー / 解析 / 結果
@@ -592,6 +524,26 @@ export default function ScanPage() {
                   opacity: cameraReady ? 1 : 0, transition: 'opacity 0.4s ease',
                 }}
               />
+
+              {/* キャンセル（戻る）ボタン — 常時表示 */}
+              {cameraReady && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => router.back()}
+                  style={{
+                    position: 'absolute', top: 16, left: 16, zIndex: 30,
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.20)',
+                    borderRadius: 10, padding: '8px 14px',
+                    color: 'rgba(255,255,255,0.75)',
+                    fontSize: 13, fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  キャンセル
+                </motion.button>
+              )}
 
               {/* カメラ起動中 */}
               {!cameraReady && !errorMsg && (
@@ -635,8 +587,8 @@ export default function ScanPage() {
                 </div>
               )}
 
-              {/* ガイド枠オーバーレイ */}
-              {cameraReady && <LandscapeGuide guideRef={guideRef} isScanning={scanState === 'scanning'} />}
+              {/* ガイド枠オーバーレイ — 縦横自動追従 */}
+              {cameraReady && <ResponsiveGuide guideRef={guideRef} isScanning={scanState === 'scanning'} isPortrait={isPortrait} />}
             </motion.div>
           )}
 
@@ -1044,20 +996,29 @@ function ResultContent({
   );
 }
 
-// ─── LandscapeGuide ───────────────────────────────────────────────────────────
+// ─── ResponsiveGuide ──────────────────────────────────────────────────────────
+// 縦横両対応のガイドフレーム
 
-function LandscapeGuide({
-  guideRef, isScanning,
+function ResponsiveGuide({
+  guideRef, isScanning, isPortrait,
 }: {
   guideRef: React.RefObject<HTMLDivElement | null>;
   isScanning: boolean;
+  isPortrait: boolean;
 }) {
-  // 横持ち前提: 高さ基準でガイド枠を決める
+  // 縦: 幅基準でガイド枠を決める、横: 高さ基準
   const guideStyle: React.CSSProperties = {
     position: 'absolute',
-    // 高さをビューポートの GUIDE_HEIGHT_RATIO に、幅をカード比率で決定
-    height: `${GUIDE_HEIGHT_RATIO * 100}%`,
-    aspectRatio: `${CARD_RATIO}`,
+    // 縦向き: 幅をビューポート幅に対して決定、横: 高さをビューポート高さに対して決定
+    ...(isPortrait
+      ? {
+          width: `${GUIDE_HEIGHT_RATIO * 100}%`,
+          aspectRatio: `${1 / CARD_RATIO}`, // 縦向きなので逆比率
+        }
+      : {
+          height: `${GUIDE_HEIGHT_RATIO * 100}%`,
+          aspectRatio: `${CARD_RATIO}`,
+        }),
     // 中央配置
     top: '50%',
     left: '50%',
