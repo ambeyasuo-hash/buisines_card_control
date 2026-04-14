@@ -252,8 +252,10 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const endpoint = (process.env.AZURE_OCR_ENDPOINT ?? bodyEndpoint ?? '').trim().replace(/\/$/, '');
-    const apiKey   = (process.env.AZURE_OCR_KEY      ?? bodyApiKey  ?? '').trim();
+    // Zero-Knowledge: サーバー環境変数は使用しない
+    // キーは端末の localStorage から毎回リクエストで渡される
+    const endpoint = (bodyEndpoint ?? '').trim().replace(/\/$/, '');
+    const apiKey   = (bodyApiKey  ?? '').trim();
 
     if (!endpoint || !apiKey) {
       return Response.json(

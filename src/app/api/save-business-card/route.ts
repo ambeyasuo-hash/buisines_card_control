@@ -1,36 +1,40 @@
 /**
- * Save Business Card OCR Result to Supabase
+ * Save Encrypted Business Card — サーバーサイドプロキシ
+ *
+ * Zero-Knowledge Architecture:
+ *   - サーバーは PII（氏名・連絡先等）を一切受け取らない
+ *   - クライアントが端末内で AES-256-GCM 暗号化したデータのみを受け取り
+ *   - Supabase の encrypted_data カラムに暗号文を格納する薄いプロキシとして動作
+ *   - Supabase URL / Anon Key もリクエストボディから受け取る（環境変数不使用）
  *
  * POST /api/save-business-card
  * Body: {
- *   name?: string
- *   company?: string
- *   title?: string
- *   email?: string
- *   tel?: string
- *   address?: string
- *   notes?: string         // Back-side full text
- *   raw?: string           // OCR raw text
- *   thumbnail?: string     // Base64 image
- *   scannedAt?: string     // ISO timestamp
+ *   encrypted_data: string      // "v1:<iv>:<ciphertext>" — クライアント側暗号化済み
+ *   encryption_key_id?: string  // キーバージョン (default: 'v1')
+ *   search_hashes?: string[]    // ブラインド検索ハッシュ (PII なし)
+ *   industry_category?: string
+ *   scanned_at?: string         // ISO timestamp
+ *   thumbnail_url?: string      // サムネイル画像 (オプション)
+ *   ocr_confidence?: number
+ *   supabaseUrl: string         // 端末 localStorage から転送
+ *   supabaseKey: string         // 端末 localStorage から転送
  * }
- *
  * Response: { ok: boolean, id?: string, error?: string }
  */
 
 import { createClient } from '@supabase/supabase-js';
 
 interface SaveRequest {
-  name?: string;
-  company?: string;
-  title?: string;
-  email?: string;
-  tel?: string;
-  address?: string;
-  notes?: string;
-  raw?: string;
-  thumbnail?: string;
-  scannedAt?: string;
+  encrypted_data: string;
+  encryption_key_id?: string;
+  search_hashes?: string[];
+  industry_category?: string;
+  scanned_at?: string;
+  thumbnail_url?: string;
+  ocr_confidence?: number;
+  // Supabase credentials passed from client localStorage
+  supabaseUrl: string;
+  supabaseKey: string;
 }
 
 interface SaveResponse {
@@ -43,73 +47,87 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const body = (await request.json()) as SaveRequest;
 
-    // Supabase 設定を環境変数から読む (Vercel 本番環境)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const { encrypted_data, supabaseUrl, supabaseKey } = body;
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    // ─── Validation ────────────────────────────────────────────────────────────
+
+    if (!encrypted_data) {
       return Response.json(
-        {
-          ok: false,
-          error: 'Supabase の設定がサーバーで見つかりません。\n\nVercel 環境変数を確認してください。',
-        } as SaveResponse,
-        { status: 500 },
+        { ok: false, error: '暗号化データがありません' } as SaveResponse,
+        { status: 400 },
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    if (!supabaseUrl || !supabaseKey) {
+      return Response.json(
+        {
+          ok: false,
+          error: 'Supabase の設定がありません。\n\n設定画面で URL と Anon Key を入力して保存してください。',
+        } as SaveResponse,
+        { status: 400 },
+      );
+    }
 
-    // ─── Prepare data for insertion ────────────────────────────────────
-    // business_cards テーブルのスキーマに合わせてデータを整形
-    const now = new Date().toISOString();
-    const scannedAt = body.scannedAt ?? now;
+    // ─── Supabase client (client-provided credentials) ────────────────────────
+    const supabase = createClient(
+      supabaseUrl.trim().replace(/\/$/, ''),
+      supabaseKey.trim(),
+    );
 
-    // 基本フィールド (JSON として attributes に格納)
-    const attributes = {
-      name: body.name ?? null,
-      company: body.company ?? null,
-      title: body.title ?? null,
-      email: body.email ?? null,
-      tel: body.tel ?? null,
-      address: body.address ?? null,
-    };
-
-    // 検索ハッシュ (company + name の組み合わせで簡易検索インデックス)
-    const searchTokens: string[] = [];
-    if (body.company) searchTokens.push(body.company.toLowerCase());
-    if (body.name) searchTokens.push(body.name.toLowerCase());
-
-    // ─── Insert into business_cards ────────────────────────────────────
-    const { data, error } = await supabase.from('business_cards').insert({
-      // スキーマ確認: ocr_raw_text, notes, thumbnail_url, scanned_at, attributes
-      ocr_raw_text: body.raw ?? null,         // 表面 OCR 生テキスト
-      notes: body.notes ?? null,               // 裏面全文テキスト
-      thumbnail_url: body.thumbnail ?? null,   // サムネイル base64
-      scanned_at: scannedAt,                   // 撮影時刻
-      attributes: attributes,                  // 抽出フィールド (JSON)
-      search_hashes: searchTokens.length > 0 ? searchTokens : null,
-      industry_category: null,                 // オプション
-      ocr_confidence: null,                    // Azure 信頼度 (今回は未使用)
-    }).select('id').single();
+    // ─── INSERT (暗号文のみ — PII はサーバーに一切渡らない) ─────────────────────
+    const { data, error } = await supabase
+      .from('business_cards')
+      .insert({
+        encrypted_data:    encrypted_data,
+        encryption_key_id: body.encryption_key_id ?? 'v1',
+        search_hashes:     body.search_hashes     ?? [],
+        industry_category: body.industry_category ?? null,
+        scanned_at:        body.scanned_at        ?? new Date().toISOString(),
+        thumbnail_url:     body.thumbnail_url      ?? null,
+        ocr_confidence:    body.ocr_confidence     ?? null,
+        // attributes / notes / ocr_raw_text は encrypted_data に内包済みのため省略
+      })
+      .select('id')
+      .single();
 
     if (error) {
-      console.error('[SaveBusinessCard] Supabase insert error:', error);
+      console.error('[SaveBusinessCard] Supabase insert error:', error.code, error.message);
+
+      // RLS / 認証エラーの分かりやすいメッセージ
+      if (error.code === '42501' || error.message.includes('policy')) {
+        return Response.json(
+          {
+            ok: false,
+            error: 'Supabase の RLS ポリシーでブロックされました。\n\n設定画面の「SQLをコピー」から初期化SQLを実行してポリシーを確認してください。',
+          } as SaveResponse,
+          { status: 200 },
+        );
+      }
+
+      if (error.code === '42P01') {
+        return Response.json(
+          {
+            ok: false,
+            error: 'business_cards テーブルが存在しません。\n\n設定画面の「SQLをコピー」から初期化SQLを実行してください。',
+          } as SaveResponse,
+          { status: 200 },
+        );
+      }
+
       return Response.json(
         {
           ok: false,
           error: `データベースへの保存に失敗しました。\n\n${error.message}`,
         } as SaveResponse,
-        { status: 500 },
+        { status: 200 },
       );
     }
 
     return Response.json(
-      {
-        ok: true,
-        id: data?.id,
-      } as SaveResponse,
+      { ok: true, id: data?.id } as SaveResponse,
       { status: 200 },
     );
+
   } catch (err) {
     const error = err as Error;
     console.error('[SaveBusinessCard] Error:', error.message);

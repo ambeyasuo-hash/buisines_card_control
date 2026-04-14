@@ -17,25 +17,18 @@ export function generateBusinessCardsTableSQL(): string {
 CREATE TABLE IF NOT EXISTS business_cards (
   -- Primary identifiers
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- user_id は Supabase Auth 使用時のみ設定。匿名利用時は NULL 許容
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
 
-  -- Original encrypted business card data (PII)
-  -- Contains: name, company, title, email, tel, address, etc.
+  -- E2EE: クライアント側 AES-256-GCM で暗号化済みデータ (PII を含む)
+  -- フォーマット: "v1:<iv_base64>:<ciphertext_base64>"
   encrypted_data TEXT NOT NULL,
 
   -- Encryption metadata (for future key rotation)
   encryption_key_id TEXT NOT NULL DEFAULT 'v1',
 
-  -- OCR Results: Front side (structured extraction)
-  -- Stored as JSON in attributes: {name, company, title, email, tel, address}
-  attributes JSONB NOT NULL DEFAULT '{}',
-
-  -- OCR Results: Back side (full-text)
-  -- Complete text extracted from business card back side for search/lookup
-  notes TEXT,
-
-  -- Blind search hashes for privacy-preserving search
-  -- Deterministic hashes of normalized: company name, person name
+  -- Blind search hashes (平文だが PII は含まない)
+  -- 企業名・氏名を小文字正規化したハッシュ
   search_hashes TEXT[] NOT NULL DEFAULT '{}',
 
   -- Categorization for dashboard filtering
@@ -48,9 +41,8 @@ CREATE TABLE IF NOT EXISTS business_cards (
 
   -- OCR metadata
   ocr_confidence FLOAT,
-  ocr_raw_text TEXT,
 
-  -- Thumbnail (lightweight preview, can be Base64 encoded)
+  -- Thumbnail (optional, card image preview)
   thumbnail_url TEXT
 );
 
@@ -90,29 +82,46 @@ EXECUTE FUNCTION update_business_cards_updated_at();
 -- Enable RLS
 ALTER TABLE business_cards ENABLE ROW LEVEL SECURITY;
 
--- Policy: Users can only view their own business cards
-CREATE POLICY "Users can view their own cards"
-  ON business_cards FOR SELECT
-  USING (auth.uid() = user_id);
+-- ── Zero-Knowledge 匿名利用モード (Supabase Auth 不使用) ──
+-- データは全て端末内で暗号化済みのため、anon キーでの読み書きを許可
+-- 本番環境で Supabase Auth を使用する場合は下記コメントアウトを切り替える
 
--- Policy: Users can insert their own business cards
-CREATE POLICY "Users can insert their own cards"
+-- Policy: 匿名ユーザーも INSERT 可能 (暗号化済みデータのみ)
+CREATE POLICY "Anon can insert encrypted cards"
   ON business_cards FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (true);
 
--- Policy: Users can update their own business cards
-CREATE POLICY "Users can update their own cards"
+-- Policy: 匿名ユーザーも SELECT 可能 (暗号文のみ返る = 端末キーがないと読めない)
+CREATE POLICY "Anon can view cards"
+  ON business_cards FOR SELECT
+  USING (true);
+
+-- Policy: 匿名ユーザーも UPDATE 可能
+CREATE POLICY "Anon can update cards"
   ON business_cards FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING (true)
+  WITH CHECK (true);
 
--- Policy: Users can delete their own business cards
-CREATE POLICY "Users can delete their own cards"
+-- Policy: 匿名ユーザーも DELETE 可能
+CREATE POLICY "Anon can delete cards"
   ON business_cards FOR DELETE
-  USING (auth.uid() = user_id);
+  USING (true);
+
+-- ── Supabase Auth 使用時はこちらに切り替え ──
+-- DROP POLICY IF EXISTS "Anon can insert encrypted cards" ON business_cards;
+-- DROP POLICY IF EXISTS "Anon can view cards" ON business_cards;
+-- DROP POLICY IF EXISTS "Anon can update cards" ON business_cards;
+-- DROP POLICY IF EXISTS "Anon can delete cards" ON business_cards;
+-- CREATE POLICY "Users can view their own cards"   ON business_cards FOR SELECT USING (auth.uid() = user_id);
+-- CREATE POLICY "Users can insert their own cards" ON business_cards FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- CREATE POLICY "Users can update their own cards" ON business_cards FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+-- CREATE POLICY "Users can delete their own cards" ON business_cards FOR DELETE USING (auth.uid() = user_id);
 
 -- ═══ GRANTS ═══
--- Authenticated users can access the table
+-- anon ロールに読み書き許可 (Zero-Knowledge モード)
+GRANT SELECT, INSERT, UPDATE, DELETE ON business_cards TO anon;
+
+-- Authenticated users (Supabase Auth 使用時)
 GRANT SELECT, INSERT, UPDATE, DELETE ON business_cards TO authenticated;
 
 -- Service role (for admin operations) has full access

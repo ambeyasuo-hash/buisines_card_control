@@ -23,6 +23,7 @@ import {
   AlertCircle, ScanLine, FileText, ChevronRight,
 } from 'lucide-react';
 import { BackButton } from '@/components/BackButton';
+import { getOrCreateEncryptionKey, encryptData } from '@/lib/crypto';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -370,9 +371,15 @@ export default function ScanPage() {
     setScanState('result');
   }, [capturePayload, scanPhase]);
 
-  // ── 4b. Save to Supabase ──────────────────────────────────────────────────
+  // ── 4b. Save to Supabase (Zero-Knowledge) ────────────────────────────────
   /**
-   * 撮影結果（表面・裏面統合）を Supabase の business_cards テーブルに保存
+   * 撮影結果を端末内で暗号化してから Supabase に保存
+   *
+   * Zero-Knowledge フロー:
+   *   1. localStorage から AES-256-GCM キーを取得 (なければ新規生成)
+   *   2. 全 OCR フィールドをクライアント側で暗号化
+   *   3. encrypted_data のみをサーバーに送信 → PII はネットワークに流れない
+   *   4. Supabase URL/Key もリクエストボディで転送 (環境変数不使用)
    */
   const handleSave = useCallback(async () => {
     if (!frontResult || isSaving) return;
@@ -381,31 +388,54 @@ export default function ScanPage() {
     setSaveError(null);
 
     try {
+      // ① Supabase 認証情報を localStorage から取得
+      const supabaseUrl = localStorage.getItem('supabase_url')?.trim() ?? '';
+      const supabaseKey = localStorage.getItem('supabase_anon_key')?.trim() ?? '';
+
+      if (!supabaseUrl || !supabaseKey) {
+        setSaveError('Supabase が未設定です。\n\n設定画面で URL と Anon Key を入力してください。');
+        return;
+      }
+
+      // ② 端末内で暗号化 — PII はこの関数を出ない
+      const { key } = await getOrCreateEncryptionKey();
+      const encryptedData = await encryptData(
+        {
+          name:    frontResult.name    ?? null,
+          company: frontResult.company ?? null,
+          title:   frontResult.title   ?? null,
+          email:   frontResult.email   ?? null,
+          tel:     frontResult.tel     ?? null,
+          address: frontResult.address ?? null,
+          notes:   backNotes           ?? null,
+          raw:     frontResult.raw     ?? null,
+        },
+        key,
+      );
+
+      // ③ ブラインド検索ハッシュ (平文だが個人特定できない正規化文字列)
+      const searchHashes: string[] = [];
+      if (frontResult.company) searchHashes.push(frontResult.company.toLowerCase().trim());
+      if (frontResult.name)    searchHashes.push(frontResult.name.toLowerCase().trim());
+
+      // ④ サーバーへは暗号文 + Supabase 認証情報のみを送信
       const res = await fetch('/api/save-business-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:      frontResult.name ?? undefined,
-          company:   frontResult.company ?? undefined,
-          title:     frontResult.title ?? undefined,
-          email:     frontResult.email ?? undefined,
-          tel:       frontResult.tel ?? undefined,
-          address:   frontResult.address ?? undefined,
-          notes:     backNotes ?? undefined,
-          raw:       frontResult.raw ?? undefined,
-          thumbnail: thumbnail ?? undefined,
-          scannedAt: new Date().toISOString(),
+          encrypted_data:    encryptedData,
+          encryption_key_id: 'v1',
+          search_hashes:     searchHashes.length > 0 ? searchHashes : undefined,
+          scanned_at:        new Date().toISOString(),
+          thumbnail_url:     thumbnail ?? undefined,
+          supabaseUrl,
+          supabaseKey,
         }),
       });
 
-      const data = await res.json() as {
-        ok: boolean;
-        id?: string;
-        error?: string;
-      };
+      const data = await res.json() as { ok: boolean; id?: string; error?: string };
 
       if (data.ok && data.id) {
-        // 保存成功 → ホームに遷移
         router.push('/');
       } else {
         setSaveError(data.error ?? '保存に失敗しました。もう一度お試しください。');

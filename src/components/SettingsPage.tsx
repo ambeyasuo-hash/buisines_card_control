@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
   Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
-  Copy, Code2, ChevronDown,
+  Copy, Code2, ChevronDown, Shield, Download, RefreshCw,
 } from 'lucide-react';
 import {
   checkSupabaseConnection,
@@ -17,6 +17,8 @@ import {
   generateBusinessCardsTableSQL,
   generateSQLEditorUrl,
 } from '@/lib/supabase-sql';
+import { getOrCreateEncryptionKey, generateEncryptionKey, exportKeyAsBase64, ENCRYPTION_LS_KEY } from '@/lib/crypto';
+import { shareOrDownloadVCF } from '@/lib/vcf';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -825,6 +827,210 @@ function SQLSchemaSection({ supabaseUrl }: { supabaseUrl: string }) {
   );
 }
 
+// ─── Encryption Key Section ───────────────────────────────────────────────────
+
+/**
+ * 暗号化キー管理セクション
+ * - 現在のキー状態表示（生成済み / 未生成）
+ * - 「電話帳にバックアップ」→ VCF 生成 + Web Share API / ダウンロード
+ * - 「キーを再生成」→ 確認付き（古いデータは復号不可になる旨を警告）
+ */
+function EncryptionKeySection() {
+  const [keyExists, setKeyExists]       = useState<boolean | null>(null);
+  const [isExporting, setIsExporting]   = useState(false);
+  const [isRegen, setIsRegen]           = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  const [feedback, setFeedback]         = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    const k = localStorage.getItem(ENCRYPTION_LS_KEY)?.trim();
+    setKeyExists(!!k);
+  }, []);
+
+  /** 電話帳バックアップ: VCF 生成 → Web Share / ダウンロード */
+  const handleExport = async () => {
+    setIsExporting(true);
+    setFeedback(null);
+    try {
+      const { keyB64 } = await getOrCreateEncryptionKey();
+      setKeyExists(true);
+      await shareOrDownloadVCF(keyB64);
+      setFeedback({ ok: true, msg: '暗号化キーを連絡先アプリに保存しました' });
+    } catch (e) {
+      const err = e as DOMException;
+      if (err.name !== 'AbortError') {
+        setFeedback({ ok: false, msg: `エラー: ${err.message}` });
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  /** キー再生成（警告確認付き） */
+  const handleRegenerate = async () => {
+    if (!confirmRegen) {
+      setConfirmRegen(true);
+      return;
+    }
+    setIsRegen(true);
+    setConfirmRegen(false);
+    try {
+      const newKey  = await generateEncryptionKey();
+      const keyB64  = await exportKeyAsBase64(newKey);
+      localStorage.setItem(ENCRYPTION_LS_KEY, keyB64);
+      setKeyExists(true);
+      setFeedback({
+        ok: false, // 警告色で表示
+        msg: '⚠ 新しいキーを生成しました。以前の暗号化データは復号できなくなります。すぐに電話帳へバックアップしてください。',
+      });
+    } finally {
+      setIsRegen(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: 'linear-gradient(150deg, rgba(139,92,246,0.10) 0%, rgba(109,40,217,0.04) 100%)',
+        border: '1px solid rgba(139,92,246,0.22)',
+        borderRadius: '16px',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
+      <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          width: '36px', height: '36px', borderRadius: '11px', flexShrink: 0,
+          background: 'rgba(139,92,246,0.22)', border: '1px solid rgba(167,139,250,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Shield style={{ width: '17px', height: '17px', color: '#c4b5fd' }} strokeWidth={1.8} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.88)' }}>
+            暗号化キー管理
+          </p>
+          <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.40)', marginTop: '1px' }}>
+            名刺データは端末内で暗号化されます (E2EE)
+          </p>
+        </div>
+        {/* Status badge */}
+        {keyExists !== null && (
+          <div style={{
+            padding: '3px 9px', borderRadius: '99px', fontSize: '10px', fontWeight: 600,
+            background: keyExists ? 'rgba(16,185,129,0.18)' : 'rgba(239,68,68,0.18)',
+            color: keyExists ? '#6ee7b7' : '#fca5a5',
+            border: `1px solid ${keyExists ? 'rgba(16,185,129,0.30)' : 'rgba(239,68,68,0.30)'}`,
+            whiteSpace: 'nowrap',
+          }}>
+            {keyExists ? '生成済み' : '未生成'}
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* Info text */}
+        <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)', lineHeight: '1.65' }}>
+          名刺データは保存前に AES-256-GCM で端末内暗号化されます。
+          キーを紛失するとデータを復号できなくなります。
+          電話帳へのバックアップを強く推奨します。
+        </p>
+
+        {/* Export to phonebook button */}
+        <motion.button
+          type="button"
+          onClick={handleExport}
+          disabled={isExporting}
+          whileHover={!isExporting ? { y: -1, boxShadow: '0 6px 20px rgba(139,92,246,0.28)' } : {}}
+          whileTap={!isExporting ? { scale: 0.97 } : {}}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            padding: '11px 16px', borderRadius: '11px', border: 'none', cursor: isExporting ? 'default' : 'pointer',
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.55) 0%, rgba(109,40,217,0.45) 100%)',
+            color: 'rgba(255,255,255,0.92)', fontSize: '13px', fontWeight: 600,
+            opacity: isExporting ? 0.6 : 1, transition: 'opacity 0.2s ease',
+          }}
+        >
+          {isExporting ? (
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+              <Loader style={{ width: '14px', height: '14px' }} />
+            </motion.div>
+          ) : (
+            <Download style={{ width: '14px', height: '14px' }} />
+          )}
+          {isExporting ? '準備中...' : '暗号化キーを電話帳にバックアップ'}
+        </motion.button>
+
+        {/* Regenerate key button */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <motion.button
+            type="button"
+            onClick={handleRegenerate}
+            disabled={isRegen}
+            whileTap={{ scale: 0.96 }}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+              padding: '9px 12px', borderRadius: '10px', cursor: isRegen ? 'default' : 'pointer',
+              background: confirmRegen
+                ? 'rgba(239,68,68,0.25)'
+                : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${confirmRegen ? 'rgba(239,68,68,0.50)' : 'rgba(255,255,255,0.10)'}`,
+              color: confirmRegen ? '#fca5a5' : 'rgba(255,255,255,0.42)',
+              fontSize: '11px', fontWeight: 500,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {isRegen ? (
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                <Loader style={{ width: '12px', height: '12px' }} />
+              </motion.div>
+            ) : (
+              <RefreshCw style={{ width: '12px', height: '12px' }} />
+            )}
+            {confirmRegen ? '⚠ 本当に再生成する' : 'キーを再生成'}
+          </motion.button>
+
+          {confirmRegen && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              onClick={() => setConfirmRegen(false)}
+              style={{
+                padding: '9px 14px', borderRadius: '10px', cursor: 'pointer',
+                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)',
+                color: 'rgba(255,255,255,0.42)', fontSize: '11px', fontWeight: 500,
+              }}
+            >
+              キャンセル
+            </motion.button>
+          )}
+        </div>
+
+        {/* Feedback */}
+        <AnimatePresence>
+          {feedback && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              style={{
+                fontSize: '11px', lineHeight: '1.6', padding: '8px 10px', borderRadius: '8px',
+                background: feedback.ok ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                color: feedback.ok ? '#6ee7b7' : '#fcd34d',
+                border: `1px solid ${feedback.ok ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}`,
+              }}
+            >
+              {feedback.msg}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
 /** Section header row */
 function SectionHeader({
   icon: Icon,
@@ -1467,6 +1673,15 @@ export function SettingsPage() {
           </div>
           <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.20)', fontSize: '16px' }}>›</div>
         </motion.a>
+      </motion.div>
+
+      {/* ═══ 4. Encryption Key Management ═══ */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.20, duration: 0.24 }}
+      >
+        <EncryptionKeySection />
       </motion.div>
 
       {/* ═══ Danger: Clear All ═══ */}
