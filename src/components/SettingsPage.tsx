@@ -1353,8 +1353,12 @@ export function SettingsPage() {
   const [vis, setVis] = useState<VisibilityState>({
     supabaseAnonKey: false, azureKey: false, geminiKey: false,
   });
+  // ═══════════════════════════════════════════════════════════════════
+  // Phoenix Edition: Default all accordion sections to CLOSED (false)
+  // This prevents null reference errors and improves UX
+  // ═══════════════════════════════════════════════════════════════════
   const [expandedSections, setExpandedSections] = useState<Record<'supabase' | 'azure' | 'gemini', boolean>>({
-    supabase: true, azure: true, gemini: true,
+    supabase: false, azure: false, gemini: false,
   });
   const [validation, setValidation] = useState<ValidationState>({
     supabaseUrl: 'empty', supabaseAnonKey: 'empty', azureEndpoint: 'empty', azureKey: 'empty', azureRegion: 'empty', geminiKey: 'empty', userEmail: 'empty',
@@ -1534,9 +1538,17 @@ export function SettingsPage() {
       <details
         open={expandedSections.supabase}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
-          if (isOpen !== undefined && isOpen !== null) {
-            setExpandedSections(prev => ({ ...prev, supabase: isOpen }));
+          // ═══════════════════════════════════════════════════════════════════
+          // Null-safe details toggle handler
+          // Safely extract 'open' property from HTMLDetailsElement
+          // ═══════════════════════════════════════════════════════════════════
+          try {
+            const target = e?.currentTarget as unknown;
+            if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
+              setExpandedSections(prev => ({ ...prev, supabase: target.open }));
+            }
+          } catch (err) {
+            // Silently ignore errors, state remains unchanged
           }
         }}
         style={{
@@ -1655,9 +1667,13 @@ export function SettingsPage() {
       <details
         open={expandedSections.azure}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
-          if (isOpen !== undefined && isOpen !== null) {
-            setExpandedSections(prev => ({ ...prev, azure: isOpen }));
+          try {
+            const target = e?.currentTarget as unknown;
+            if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
+              setExpandedSections(prev => ({ ...prev, azure: target.open }));
+            }
+          } catch (err) {
+            // Silently ignore errors
           }
         }}
         style={{
@@ -1785,9 +1801,13 @@ export function SettingsPage() {
       <details
         open={expandedSections.gemini}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
-          if (isOpen !== undefined && isOpen !== null) {
-            setExpandedSections(prev => ({ ...prev, gemini: isOpen }));
+          try {
+            const target = e?.currentTarget as unknown;
+            if (target && typeof target === 'object' && 'open' in target && typeof target.open === 'boolean') {
+              setExpandedSections(prev => ({ ...prev, gemini: target.open }));
+            }
+          } catch (err) {
+            // Silently ignore errors
           }
         }}
         style={{

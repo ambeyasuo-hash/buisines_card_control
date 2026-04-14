@@ -73,8 +73,11 @@ html[data-font-size="extra-large"] {
 
 html {
   scroll-behavior: smooth;
-  /* calc() の動作を確実にするため、CSS 側で数値型変数を定義 */
-  font-size: calc(16px * var(--base-font-size));
+  /* ═══════════════════════════════════════════════════════════════════
+     calc() の動作を確実にするため、!important で最優先度を確保
+     inline style.setProperty と競合しない設定
+     ═══════════════════════════════════════════════════════════════════ */
+  font-size: calc(16px * var(--base-font-size, 1.0)) !important;
 }
 
 body {

@@ -66,15 +66,25 @@ function applyFontSize(size: FontSize) {
   if (typeof document === 'undefined') return;
 
   const htmlElement = document.documentElement;
+  const scale = FONT_SIZE_SCALE[size];
+  const baseSize = 16; // 1rem = 16px
+  const newSize = Math.round(baseSize * scale);
 
   // ═══════════════════════════════════════════════════════════════════
-  // 型ミスマッチ解消: data-font-size 属性のみに依存
-  // inline style での CSS 変数設定は廃止（文字列型による calc 無効化を防止）
+  // Phoenix Edition: Strict font-size application protocol
+  // 1. data-font-size 属性 → CSS の --base-font-size 変数を更新
+  // 2. inline style.setProperty に !important フラグ → 最優先度を確保
+  // 3. reflow 強制実行 → スタイル反映を同期化
   // ═══════════════════════════════════════════════════════════════════
 
-  // Set data-font-size attribute (CSS rules in globals.css will handle the rest)
+  // 1. Set data-font-size attribute (CSS rules in globals.css will handle --base-font-size)
   htmlElement.setAttribute('data-font-size', size);
 
-  // Force synchronous DOM style recalculation
+  // 2. Set font-size directly with !important for immediate effect
+  //    This ensures font-size is applied before CSS calc() evaluates
+  htmlElement.style.setProperty('font-size', `${newSize}px`, 'important');
+
+  // 3. Force synchronous DOM style recalculation and repaint
   void htmlElement.offsetHeight; // Trigger reflow
+  void htmlElement.offsetWidth;  // Additional reflow guarantee
 }
