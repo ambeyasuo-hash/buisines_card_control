@@ -164,6 +164,13 @@ export default function ScanPage() {
 
     const startCamera = async () => {
       try {
+        // iOS: 前のカメラセッションが物理的に解放されるまで待機
+        // 再起動時 (cameraKey > 0) は 80ms 待機して NotReadableError を防ぐ
+        if (cameraKey > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 80));
+          if (cancelled) return;
+        }
+
         // 4K → FHD → HD の順にフォールバック
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -182,13 +189,34 @@ export default function ScanPage() {
 
         streamRef.current = stream;
 
-        // video 要素に新ストリームをアタッチ
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          // srcObject を設定した後 play() を明示的に呼ぶことで
-          // 一部ブラウザの autoPlay が効かない問題を回避
-          videoRef.current.play().catch(() => { /* 自動再生ブロック時は onLoadedMetadata で対応 */ });
-        }
+        // iOS / AnimatePresence: video 要素が DOM にマウントされるまで rAF でリトライ
+        // mode="wait" により exit アニメーション完了後にマウントされるため、
+        // getUserMedia 完了時点では videoRef.current が null になる場合がある
+        const attachStream = (attempt: number) => {
+          if (cancelled) {
+            // rAF ループ中にクリーンアップが走った場合はストリームを破棄して終了
+            stream.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+            return;
+          }
+          if (videoRef.current) {
+            // iOS Safari: muted を imperatively に設定 (JSX 属性だけでは不十分な場合がある)
+            videoRef.current.muted = true;
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => { /* onLoadedMetadata でリカバリ */ });
+          } else if (attempt < 60) {
+            // まだマウントされていない: 次フレームで再試行 (最大 60 回 ≈ 1 秒)
+            requestAnimationFrame(() => attachStream(attempt + 1));
+          } else {
+            // 1 秒経過しても video 要素が現れない場合はエラー表示
+            setErrorMsg('カメラの表示に失敗しました。\n\nページを更新してもう一度お試しください。');
+            setScanState('ready');
+            stream.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+          }
+        };
+        requestAnimationFrame(() => attachStream(0));
+
       } catch (err) {
         if (cancelled) return;
         const e = err as DOMException;
