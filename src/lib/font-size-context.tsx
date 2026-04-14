@@ -21,17 +21,20 @@ const LS_KEY = 'app_font_size';
 const DEFAULT_FONT_SIZE: FontSize = 'medium';
 
 export function FontSizeProvider({ children }: { children: ReactNode }) {
+  // ═══════════════════════════════════════════════════════════════════
+  // SSR 対策: 初期値は常に DEFAULT_FONT_SIZE
+  // useEffect 内でのみ localStorage にアクセス
+  // ═══════════════════════════════════════════════════════════════════
   const [fontSize, setFontSizeState] = useState<FontSize>(DEFAULT_FONT_SIZE);
-  const [mounted, setMounted] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount and apply to DOM
   useEffect(() => {
+    // SSR-safe: Only access localStorage inside useEffect on client-side
     const saved = localStorage.getItem(LS_KEY) as FontSize | null;
-    if (saved && FONT_SIZE_SCALE[saved]) {
-      setFontSizeState(saved);
-      applyFontSize(saved);
-    }
-    setMounted(true);
+    const sizeToApply = (saved && FONT_SIZE_SCALE[saved]) ? saved : DEFAULT_FONT_SIZE;
+
+    setFontSizeState(sizeToApply);
+    applyFontSize(sizeToApply);
   }, []);
 
   const setFontSize = (size: FontSize) => {
@@ -40,9 +43,13 @@ export function FontSizeProvider({ children }: { children: ReactNode }) {
     applyFontSize(size);
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ハイドレーション修正: 常に children を描画
+  // mounted フラグの条件レンダリングを廃止し、useEffect で style 適用
+  // ═══════════════════════════════════════════════════════════════════
   return (
     <FontSizeContext.Provider value={{ fontSize, setFontSize }}>
-      {mounted && children}
+      {children}
     </FontSizeContext.Provider>
   );
 }
@@ -56,24 +63,18 @@ export function useFontSize() {
 }
 
 function applyFontSize(size: FontSize) {
-  const scale = FONT_SIZE_SCALE[size];
-  const baseSize = 16; // 1rem = 16px
-  const newSize = Math.round(baseSize * scale);
+  if (typeof document === 'undefined') return;
 
-  if (typeof document !== 'undefined') {
-    // Set CSS variable for dynamic scaling
-    document.documentElement.style.setProperty('--base-font-size', scale.toString());
-    // Also set font-size directly for backward compatibility
-    document.documentElement.style.fontSize = `${newSize}px`;
-  }
-}
+  const htmlElement = document.documentElement;
 
-// Export for server-side usage (to set initial size from localStorage)
-export function applyFontSizeFromStorage() {
-  if (typeof localStorage !== 'undefined') {
-    const saved = localStorage.getItem(LS_KEY) as FontSize | null;
-    if (saved && FONT_SIZE_SCALE[saved]) {
-      applyFontSize(saved);
-    }
-  }
+  // ═══════════════════════════════════════════════════════════════════
+  // 型ミスマッチ解消: data-font-size 属性のみに依存
+  // inline style での CSS 変数設定は廃止（文字列型による calc 無効化を防止）
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Set data-font-size attribute (CSS rules in globals.css will handle the rest)
+  htmlElement.setAttribute('data-font-size', size);
+
+  // Force synchronous DOM style recalculation
+  void htmlElement.offsetHeight; // Trigger reflow
 }

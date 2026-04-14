@@ -697,7 +697,7 @@ function SQLSchemaSection({ supabaseUrl }: { supabaseUrl: string }) {
     <details
       open={isOpen}
       onToggle={(e) => {
-        const isDetailsOpen = (e?.currentTarget as any)?.open;
+        const isDetailsOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
         if (isDetailsOpen !== undefined && isDetailsOpen !== null) {
           setIsOpen(isDetailsOpen);
         }
@@ -1282,28 +1282,19 @@ function BackupKeyDisplay({ userEmail }: { userEmail: string }) {
 
 /** Font size selector with segmented control style */
 function FontSizeSelector() {
-  const [fontSize, setFontSize] = useState<FontSize>('medium');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('app_font_size') as any || 'medium';
-    setFontSize(saved);
-    setMounted(true);
-  }, []);
+  // ═══════════════════════════════════════════════════════════════
+  // Context 参照の保護: useFontSize が null を返す場合の対応
+  // ═══════════════════════════════════════════════════════════════
+  const context = useFontSize();
+  if (!context) {
+    return null; // FontSizeProvider の外では render しない
+  }
+  const { fontSize, setFontSize: setContextFontSize } = context;
 
   const handleChange = (size: FontSize) => {
-    setFontSize(size);
-    localStorage.setItem('app_font_size', size);
-    // Apply font size immediately
-    const scales: Record<FontSize, number> = {
-      medium: 1.0,          // 16px (base)
-      large: 1.3,           // 20.8px
-      'extra-large': 1.6,   // 25.6px
-    };
-    document.documentElement.style.fontSize = `${Math.round(16 * scales[size])}px`;
+    // Single source of truth: use context setFontSize
+    setContextFontSize(size);
   };
-
-  if (!mounted) return null;
 
   const sizes: { value: FontSize; label: string; desc: string }[] = [
     { value: 'medium', label: '標準', desc: 'Medium' },
@@ -1543,7 +1534,7 @@ export function SettingsPage() {
       <details
         open={expandedSections.supabase}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as any)?.open;
+          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
           if (isOpen !== undefined && isOpen !== null) {
             setExpandedSections(prev => ({ ...prev, supabase: isOpen }));
           }
@@ -1664,7 +1655,7 @@ export function SettingsPage() {
       <details
         open={expandedSections.azure}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as any)?.open;
+          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
           if (isOpen !== undefined && isOpen !== null) {
             setExpandedSections(prev => ({ ...prev, azure: isOpen }));
           }
@@ -1794,7 +1785,7 @@ export function SettingsPage() {
       <details
         open={expandedSections.gemini}
         onToggle={(e) => {
-          const isOpen = (e?.currentTarget as any)?.open;
+          const isOpen = (e?.currentTarget as HTMLDetailsElement)?.open ?? false;
           if (isOpen !== undefined && isOpen !== null) {
             setExpandedSections(prev => ({ ...prev, gemini: isOpen }));
           }
