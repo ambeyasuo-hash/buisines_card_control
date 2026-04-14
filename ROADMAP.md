@@ -48,14 +48,21 @@
   - `check-connection.ts` は raw `fetch()` を使用 → 影響なし
   - `.tsx` ファイルに直接 `createClient` 呼び出しなし
 
-## 🟦 Phase 4: 一覧・閲覧 UI (Completed)
-- [x] 4.1 Dashboard モック脱却 — Supabase から暗号文取得 + 端末内復号表示
-- [x] 4.2 復号失敗カードのガード節 (除外 + 件数バナー)
-- [x] 4.3 サムネイル表示 (64×40px / object-fit:cover / 縦横名刺対応)
-- [x] 4.4 保存 → 一覧直接遷移 (`?tab=list` ディープリンク + `router.refresh()`)
-- [x] 4.5 ローディング / 未設定 / エラー / 空の各ステート UI
+## ✅ Phase 3.5: 一覧・閲覧 UI ← **2026-04-14 完了**
+**保存済みデータの一覧表示における Zero-Knowledge 復号の完全統合と安定化**
 
-## 🟧 Phase 5: 検索・フィルタ・詳細 (Planned)
+データフロー確認:
+- [x] 3.5.1 復号ロジック共通化 — Dashboard.tsx で Supabase から encrypted_data を取得
+- [x] 3.5.2 端末内復号 — Web Crypto API + localStorage のマスターキーで AES-256-GCM 復号
+- [x] 3.5.3 データ不整合排除 — 復号失敗カードはガード節で除外 + エラーバナー表示
+- [x] 3.5.4 ローディング・空状態 — スケルトン表示 + 「名刺をスキャンしてください」誘導 UI
+- [x] 3.5.5 サムネイル表示 — 64×40px / object-fit:cover / 縦横名刺対応
+- [x] 3.5.6 検索・ソート — クライアント側で復号済みデータに実行
+
+## 🟦 Phase 4: 検索・フィルタ・詳細 (Planned)
+**業種フィルタ + 詳細画面 + 連携アクション**
+
+## 🟧 Phase 5: 拡張機能 (Planned)
 - [ ] 5.1 industry_category の自動分類 (Gemini によるカテゴリ推定)
 - [ ] 5.2 業種フィルタチップの有効化
 - [ ] 5.3 名刺詳細画面 / インライン編集 / 削除

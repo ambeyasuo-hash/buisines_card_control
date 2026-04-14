@@ -178,11 +178,9 @@ export function Dashboard() {
       const q = searchQuery.toLowerCase();
       result = result.filter((c) => {
         return (
-          c.name?.includes(searchQuery)    ||
-          c.company?.includes(searchQuery) ||
-          c.title?.includes(searchQuery)   ||
           c.name?.toLowerCase().includes(q)    ||
           c.company?.toLowerCase().includes(q) ||
+          c.title?.toLowerCase().includes(q)   ||
           c.email?.toLowerCase().includes(q)   ||
           c.tel?.includes(q)
         );
