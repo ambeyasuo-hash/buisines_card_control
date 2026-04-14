@@ -19,6 +19,7 @@ import {
 } from '@/lib/supabase-sql';
 import { getOrCreateEncryptionKey, generateEncryptionKey, exportKeyAsBase64, ENCRYPTION_LS_KEY } from '@/lib/crypto';
 import { shareOrDownloadVCF } from '@/lib/vcf';
+import { invalidateSupabaseClient } from '@/lib/supabase-client';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -1311,6 +1312,8 @@ export function SettingsPage() {
     try {
       Object.values(LS).forEach((k) => localStorage.removeItem(k));
     } catch { /* ignore */ }
+    // Supabase シングルトンキャッシュを破棄（古い認証情報が残らないようにする）
+    invalidateSupabaseClient();
     const cleared = { supabaseUrl: '', supabaseAnonKey: '', azureEndpoint: '', azureKey: '', azureRegion: 'japaneast', geminiKey: '' };
     setForm(cleared);
     setValidation(computeValidation(cleared));
