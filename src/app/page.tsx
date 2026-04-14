@@ -8,6 +8,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { SettingsPage } from '@/components/SettingsPage';
 import { PWAInstallGuide } from '@/components/PWAInstallGuide';
 import { BackButton } from '@/components/BackButton';
+import { NewsTicker } from '@/components/NewsTicker';
 import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-react';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
@@ -173,6 +174,11 @@ export default function Home() {
               </motion.p>
             </div>
 
+            {/* News Ticker */}
+            <div className="px-4">
+              <NewsTicker />
+            </div>
+
             {/* Action Cards */}
             <div className="px-4 pb-4" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {ACTION_CARDS.map((card, i) => {
@@ -189,7 +195,7 @@ export default function Home() {
                     onHoverStart={() => setHoveredCard(card.id)}
                     onHoverEnd={() => setHoveredCard(null)}
                     onClick={() => 'route' in card && card.route ? router.push(card.route) : setActiveTab(card.id as ActiveTab)}
-                    className="relative w-full rounded-2xl py-7 px-6 flex flex-col items-center gap-4 text-center cursor-pointer"
+                    className="relative w-full rounded-2xl py-7 px-6 flex flex-col items-center gap-4 text-center cursor-pointer backdrop-blur-md"
                     style={{
                       background: card.bg,
                       border: `1px solid ${card.border}`,
