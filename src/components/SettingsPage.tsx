@@ -39,12 +39,11 @@ const LS = {
 } as const;
 
 // ─── Font size options ────────────────────────────────────────────────────────
-type FontSize = 'small' | 'medium' | 'large' | 'extra-large';
+type FontSize = 'medium' | 'large' | 'extra-large';
 const FONT_SIZES: { value: FontSize; label: string; scale: number }[] = [
-  { value: 'small',       label: '小 (Small)',        scale: 0.75 },
   { value: 'medium',      label: '標準 (Medium)',     scale: 1.0 },
-  { value: 'large',       label: '大 (Large)',        scale: 1.4 },
-  { value: 'extra-large', label: '特大 (Extra Large)', scale: 1.75 },
+  { value: 'large',       label: '大 (Large)',        scale: 1.3 },
+  { value: 'extra-large', label: '特大 (Extra Large)', scale: 1.6 },
 ];
 
 // ─── Azure region options ─────────────────────────────────────────────────────
@@ -697,7 +696,12 @@ function SQLSchemaSection({ supabaseUrl }: { supabaseUrl: string }) {
   return (
     <details
       open={isOpen}
-      onToggle={(e) => setIsOpen(e.currentTarget.open)}
+      onToggle={(e) => {
+        const isDetailsOpen = (e?.currentTarget as any)?.open;
+        if (isDetailsOpen !== undefined && isDetailsOpen !== null) {
+          setIsOpen(isDetailsOpen);
+        }
+      }}
       style={{
         marginTop: '16px',
         background: 'rgba(37,99,235,0.06)',
@@ -1278,7 +1282,7 @@ function BackupKeyDisplay({ userEmail }: { userEmail: string }) {
 
 /** Font size selector with segmented control style */
 function FontSizeSelector() {
-  const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large' | 'extra-large'>('medium');
+  const [fontSize, setFontSize] = useState<FontSize>('medium');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -1287,30 +1291,28 @@ function FontSizeSelector() {
     setMounted(true);
   }, []);
 
-  const handleChange = (size: typeof fontSize) => {
+  const handleChange = (size: FontSize) => {
     setFontSize(size);
     localStorage.setItem('app_font_size', size);
     // Apply font size immediately
-    const scales: Record<typeof size, number> = {
-      small: 0.75,          // 12px
+    const scales: Record<FontSize, number> = {
       medium: 1.0,          // 16px (base)
-      large: 1.4,           // 22.4px
-      'extra-large': 1.75,  // 28px
+      large: 1.3,           // 20.8px
+      'extra-large': 1.6,   // 25.6px
     };
     document.documentElement.style.fontSize = `${Math.round(16 * scales[size])}px`;
   };
 
   if (!mounted) return null;
 
-  const sizes: { value: typeof fontSize; label: string; desc: string }[] = [
-    { value: 'small', label: '小', desc: 'Small' },
+  const sizes: { value: FontSize; label: string; desc: string }[] = [
     { value: 'medium', label: '標準', desc: 'Medium' },
     { value: 'large', label: '大', desc: 'Large' },
     { value: 'extra-large', label: '特大', desc: 'XL' },
   ];
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
       {sizes.map((size) => {
         const isSelected = fontSize === size.value;
         return (
@@ -1340,7 +1342,7 @@ function FontSizeSelector() {
               gap: '4px',
             }}
           >
-            <span style={{ fontSize: size.value === 'small' ? '10px' : size.value === 'medium' ? '14px' : size.value === 'large' ? '18px' : '22px' }}>
+            <span style={{ fontSize: size.value === 'medium' ? '14px' : size.value === 'large' ? '18px' : '22px' }}>
               A
             </span>
             <span style={{ fontSize: '10px' }}>{size.label}</span>
@@ -1540,7 +1542,12 @@ export function SettingsPage() {
       {/* ═══ 1. Supabase ═══ */}
       <details
         open={expandedSections.supabase}
-        onToggle={(e) => setExpandedSections(prev => ({ ...prev, supabase: e.currentTarget.open }))}
+        onToggle={(e) => {
+          const isOpen = (e?.currentTarget as any)?.open;
+          if (isOpen !== undefined && isOpen !== null) {
+            setExpandedSections(prev => ({ ...prev, supabase: isOpen }));
+          }
+        }}
         style={{
           background: 'linear-gradient(150deg, rgba(37,99,235,0.14) 0%, rgba(29,78,216,0.06) 100%)',
           border: '1px solid rgba(59,130,246,0.26)',
@@ -1656,7 +1663,12 @@ export function SettingsPage() {
       {/* ═══ 2. Azure AI Vision (OCR) ═══ */}
       <details
         open={expandedSections.azure}
-        onToggle={(e) => setExpandedSections(prev => ({ ...prev, azure: e.currentTarget.open }))}
+        onToggle={(e) => {
+          const isOpen = (e?.currentTarget as any)?.open;
+          if (isOpen !== undefined && isOpen !== null) {
+            setExpandedSections(prev => ({ ...prev, azure: isOpen }));
+          }
+        }}
         style={{
           background: 'linear-gradient(150deg, rgba(245,158,11,0.13) 0%, rgba(217,119,6,0.05) 100%)',
           border: '1px solid rgba(245,158,11,0.26)',
@@ -1781,7 +1793,12 @@ export function SettingsPage() {
       {/* ═══ 3. Gemini API ═══ */}
       <details
         open={expandedSections.gemini}
-        onToggle={(e) => setExpandedSections(prev => ({ ...prev, gemini: e.currentTarget.open }))}
+        onToggle={(e) => {
+          const isOpen = (e?.currentTarget as any)?.open;
+          if (isOpen !== undefined && isOpen !== null) {
+            setExpandedSections(prev => ({ ...prev, gemini: isOpen }));
+          }
+        }}
         style={{
           background: 'linear-gradient(150deg, rgba(139,92,246,0.14) 0%, rgba(109,40,217,0.06) 100%)',
           border: '1px solid rgba(139,92,246,0.26)',
@@ -1886,7 +1903,7 @@ export function SettingsPage() {
       >
         <SectionHeader
           icon={Sparkles}
-          title="文字表示量（Font Size）"
+          title="文字サイズ"
           subtitle="アプリ全体のテキストサイズをカスタマイズ"
           iconBg="rgba(139,92,246,0.28)"
           iconBorder="rgba(167,139,250,0.40)"

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-type FontSize = 'small' | 'medium' | 'large' | 'extra-large';
+type FontSize = 'medium' | 'large' | 'extra-large';
 
 interface FontSizeContextType {
   fontSize: FontSize;
@@ -12,10 +12,9 @@ interface FontSizeContextType {
 const FontSizeContext = createContext<FontSizeContextType | undefined>(undefined);
 
 const FONT_SIZE_SCALE: Record<FontSize, number> = {
-  small: 0.9,       // 16 * 0.9 = 14.4px
   medium: 1.0,      // 16 * 1.0  = 16px (base)
-  large: 1.4,       // 16 * 1.4  = 22.4px
-  'extra-large': 1.75, // 16 * 1.75 = 28px
+  large: 1.3,       // 16 * 1.3  = 20.8px
+  'extra-large': 1.6, // 16 * 1.6 = 25.6px
 };
 
 const LS_KEY = 'app_font_size';
