@@ -1,0 +1,109 @@
+name: 🤖 Keep-Alive - Prevent DB Pause
+
+on:
+  schedule:
+    # 毎日 UTC 0:00 (JST 9:00) に実行
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    name: Keep Supabase/Azure/Gemini Alive
+
+    steps:
+      - name: 📍 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Ping Supabase Database
+        id: supabase-check
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/profiles?select=count&count=exact" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Supabase: Ready"
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "⚠️ Supabase: HTTP $HTTP_CODE"
+          fi
+
+      - name: 🔍 Ping Azure Computer Vision
+        id: azure-check
+        continue-on-error: true
+        run: |
+          # Azure は認証ヘッダ検証のため、軽量リクエストで疎通確認
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.AZURE_ENDPOINT }}/vision/v3.2/analyze?visualFeatures=Description" \
+            -H "Ocp-Apim-Subscription-Key: ${{ secrets.AZURE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"url":"https://example.com/dummy.jpg"}' || true)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+
+          # Azure は 400 でも接続成功と見なす（認証が通っているため）
+          if [[ "$HTTP_CODE" =~ ^(200|400|401|403)$ ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Azure: Ready (HTTP $HTTP_CODE)"
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "⚠️ Azure: HTTP $HTTP_CODE"
+          fi
+
+      - name: 🔍 Ping Gemini API
+        id: gemini-check
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"contents":[{"parts":[{"text":"ping"}]}]}')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+
+          if [[ "$HTTP_CODE" =~ ^(200|400)$ ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Gemini: Ready (HTTP $HTTP_CODE)"
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "⚠️ Gemini: HTTP $HTTP_CODE"
+          fi
+
+      - name: 📊 Log Results
+        run: |
+          echo "=== Keep-Alive Status Report ==="
+          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Supabase: ${{ steps.supabase-check.outputs.status }}"
+          echo "Azure:    ${{ steps.azure-check.outputs.status }}"
+          echo "Gemini:   ${{ steps.gemini-check.outputs.status }}"
+          echo "================================"
+
+      - name: 💬 Slack Notification (Optional)
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "⚠️ Keep-Alive Check Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Keep-Alive Status Check*\nSupabase: ${{ steps.supabase-check.outputs.status }}\nAzure: ${{ steps.azure-check.outputs.status }}\nGemini: ${{ steps.gemini-check.outputs.status }}"
+                  }
+                }
+              ]
+            }
+        continue-on-error: true

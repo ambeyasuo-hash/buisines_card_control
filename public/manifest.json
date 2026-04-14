@@ -1,18 +1,29 @@
 {
   "name": "あんべの名刺代わり",
-  "short_name": "名刺代わり",
-  "description": "現場での出会いを最速でお礼メールと資産に変える",
+  "short_name": "名刺DX",
+  "description": "現場での出会いを最速でお礼メールと資産に変える — Zero-Knowledge Business Card Platform",
   "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0a0f1a",
-  "theme_color": "#F8FAFC",
-  "orientation": "portrait-primary",
   "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0a0f1a",
+  "background_color": "#0a0f1a",
+  "prefer_related_applications": false,
+  "categories": ["productivity", "business"],
+  "screenshots": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "purpose": "any"
+    }
+  ],
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon",
       "purpose": "any"
     },
     {
@@ -22,11 +33,32 @@
       "purpose": "any"
     },
     {
-      "src": "/favicon-32.png",
-      "sizes": "32x32",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "categories": ["productivity", "utilities"]
+  "shortcuts": [
+    {
+      "name": "スキャン",
+      "short_name": "スキャン",
+      "description": "名刺をスキャンして追加",
+      "url": "/scan",
+      "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    },
+    {
+      "name": "ニュース",
+      "short_name": "ニュース",
+      "description": "更新履歴を確認",
+      "url": "/news",
+      "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    }
+  ]
 }

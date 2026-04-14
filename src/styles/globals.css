@@ -40,6 +40,26 @@
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Font Scaling (Dynamic Size Control) */
+  --base-font-size: 1.2;
+}
+
+/* Font Size Variants */
+html[data-font-size="small"] {
+  --base-font-size: 0.9;
+}
+
+html[data-font-size="medium"] {
+  --base-font-size: 1.0;
+}
+
+html[data-font-size="large"] {
+  --base-font-size: 1.4;
+}
+
+html[data-font-size="extra-large"] {
+  --base-font-size: 1.75;
 }
 
 /* ============================================
@@ -53,6 +73,7 @@
 
 html {
   scroll-behavior: smooth;
+  font-size: calc(16px * var(--base-font-size));
 }
 
 body {
@@ -96,30 +117,30 @@ code {
 
   /* GLASSMORPHISM CARDS — note: no @apply to other custom classes */
   .ambe-glass-card {
-    backdrop-filter: blur(12px);
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 0.75rem;
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
     transition: all 0.3s;
   }
   .ambe-glass-card:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.2);
-    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.18);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06);
   }
   .ambe-glass-card-lg {
-    backdrop-filter: blur(12px);
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 1rem;
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
     transition: all 0.3s;
   }
   .ambe-glass-card-lg:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.2);
-    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.18);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06);
   }
 
   .ambe-dark-bg { @apply bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950; }

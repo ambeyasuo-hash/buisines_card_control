@@ -8,6 +8,7 @@ import {
   Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone, Mail,
 } from 'lucide-react';
 import { DevicePairingModal } from './DevicePairingModal';
+import { PersistenceGuideSection } from './PersistenceGuideSection';
 import {
   checkSupabaseConnection,
   checkAzureConnectionViaServer,
@@ -2111,11 +2112,14 @@ export function SettingsPage() {
         <EncryptionKeySection />
       </motion.div>
 
-      {/* ═══ 5. Device Pairing (Phase 7) ═══ */}
+      {/* ═══ 5. Persistence Guide (Keep-Alive 24/7) ═══ */}
+      <PersistenceGuideSection />
+
+      {/* ═══ 6. Device Pairing (Phase 7) ═══ */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.26, duration: 0.24 }}
+        transition={{ delay: 0.28, duration: 0.24 }}
         style={{
           background: 'linear-gradient(150deg, rgba(59,130,246,0.12) 0%, rgba(34,197,94,0.06) 100%)',
           border: '1px solid rgba(59,130,246,0.25)', borderRadius: '12px', padding: '16px',

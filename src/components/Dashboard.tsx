@@ -10,12 +10,13 @@
  *   4. 検索 / ソートは復号済みデータに対してクライアント側で実行
  */
 
-import { Search, Plus, ChevronDown, RefreshCw, AlertTriangle, Lock, Phone, Mail, MapPin, Briefcase } from 'lucide-react';
+import { Search, Plus, ChevronDown, RefreshCw, AlertTriangle, Lock, Phone, Mail, MapPin, Briefcase, X, Copy, Settings, ChevronLeft } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { createSupabaseClient, isSupabaseConfigured } from '@/lib/supabase-client';
 import { getOrCreateEncryptionKey, decryptData } from '@/lib/crypto';
+import { normalizePersonName, normalizeCompanyName, tokenizeForSearch } from '@/lib/normalize';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,171 @@ interface DecryptedCard {
 
 type SortType = 'recent' | 'name';
 type LoadState = 'loading' | 'success' | 'error' | 'unconfigured';
+
+/** 詳細表示用のモーダルコンポーネント (Zero-Knowledge) */
+function CardDetailModal({
+  card,
+  onClose
+}: {
+  card: DecryptedCard;
+  onClose: () => void;
+}) {
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = (value: string, field: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    });
+  };
+
+  const Field = ({ label, value, icon: Icon }: { label: string; value?: string; icon: React.ComponentType<any> }) => {
+    if (!value) return null;
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: -8 }}
+        animate={{ opacity: 1, x: 0 }}
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+          padding: '12px 0',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        <Icon style={{ width: 18, height: 18, color: '#3b82f6', flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', marginBottom: 4 }}>
+            {label}
+          </p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', wordBreak: 'break-word', lineHeight: 1.6 }}>
+            {value}
+          </p>
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={() => copyToClipboard(value, label)}
+          style={{
+            background: copiedField === label ? 'rgba(34,197,94,0.12)' : 'rgba(59,130,246,0.08)',
+            border: copiedField === label ? '1px solid rgba(34,197,94,0.30)' : '1px solid rgba(59,130,246,0.20)',
+            borderRadius: 6,
+            padding: 6,
+            cursor: 'pointer',
+            color: copiedField === label ? '#22c55e' : '#93c5fd',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          title={copiedField === label ? 'コピーしました' : 'コピー'}
+        >
+          {copiedField === label ? (
+            <span style={{ fontSize: 10, fontWeight: 600 }}>✓</span>
+          ) : (
+            <Copy style={{ width: 12, height: 12 }} />
+          )}
+        </motion.button>
+      </motion.div>
+    );
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.60)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'flex-end',
+        }}
+      >
+        <motion.div
+          initial={{ y: 320, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 320, opacity: 0 }}
+          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: '100%',
+            maxWidth: 600,
+            background: 'linear-gradient(to bottom, rgba(30,41,59,0.95), rgba(15,23,42,0.90))',
+            borderRadius: '16px 16px 0 0',
+            borderTop: '1px solid rgba(255,255,255,0.10)',
+            padding: '20px',
+            boxSizing: 'border-box',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.95)' }}>
+                {card.name ?? '（名前なし）'}
+              </p>
+              {card.company && (
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.40)', marginTop: 2 }}>
+                  {card.company}
+                </p>
+              )}
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.92 }}
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.50)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X style={{ width: 18, height: 18 }} />
+            </motion.button>
+          </div>
+
+          {/* Content */}
+          <div style={{ marginBottom: 8 }}>
+            <Field label="肩書き" value={card.title} icon={Briefcase} />
+            <Field label="電話番号" value={card.tel} icon={Phone} />
+            <Field label="メール" value={card.email} icon={Mail} />
+            <Field label="住所" value={card.address} icon={MapPin} />
+            {card.notes && (
+              <div style={{ padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', marginBottom: 8 }}>
+                  メモ
+                </p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {card.notes}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {card.scanned_at && (
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.20)', marginTop: 12, textAlign: 'center' }}>
+              登録: {new Date(card.scanned_at).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
 
 // ─── Color palette (index % 3) ───────────────────────────────────────────────
 
@@ -89,6 +255,7 @@ export function Dashboard() {
   const [searchQuery,      setSearchQuery]      = useState('');
   const [sortType,         setSortType]         = useState<SortType>('recent');
   const [showSortMenu,     setShowSortMenu]     = useState(false);
+  const [selectedCard,     setSelectedCard]     = useState<DecryptedCard | null>(null);
 
   // ── Fetch & Decrypt ───────────────────────────────────────────────────────
 
@@ -175,14 +342,34 @@ export function Dashboard() {
     let result = [...cards];
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      // 検索クエリを正規化（半角・小文字化）
+      const normalizedQuery = normalizePersonName(searchQuery);
+      const queryTokens = tokenizeForSearch(normalizedQuery);
+
       result = result.filter((c) => {
+        // 各フィールドを正規化して検索
+        const normalizedName = c.name ? normalizePersonName(c.name) : '';
+        const normalizedCompany = c.company ? normalizeCompanyName(c.company) : '';
+        const normalizedTitle = c.title ? normalizePersonName(c.title) : '';
+        const normalizedEmail = c.email ? normalizePersonName(c.email) : '';
+
+        // 正規化されたテキストに検索語が含まれるかチェック
+        const nameTokens = tokenizeForSearch(normalizedName);
+        const companyTokens = tokenizeForSearch(normalizedCompany);
+        const titleTokens = tokenizeForSearch(normalizedTitle);
+
         return (
-          c.name?.toLowerCase().includes(q)    ||
-          c.company?.toLowerCase().includes(q) ||
-          c.title?.toLowerCase().includes(q)   ||
-          c.email?.toLowerCase().includes(q)   ||
-          c.tel?.includes(q)
+          normalizedName.includes(normalizedQuery) ||
+          normalizedCompany.includes(normalizedQuery) ||
+          normalizedTitle.includes(normalizedQuery) ||
+          normalizedEmail.includes(normalizedQuery) ||
+          c.tel?.includes(normalizedQuery) ||
+          // トークンベースの検索（部分一致対応）
+          queryTokens.some(token =>
+            nameTokens.some(nt => nt.includes(token) || token.includes(nt)) ||
+            companyTokens.some(ct => ct.includes(token) || token.includes(ct)) ||
+            titleTokens.some(tt => tt.includes(token) || token.includes(tt))
+          )
         );
       });
     }
@@ -250,6 +437,19 @@ export function Dashboard() {
         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.7 }}>
           設定画面で Supabase URL と<br />Anon Key を入力してください
         </p>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => router.push('/identity')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px',
+            background: 'rgba(245,158,11,0.18)', border: '1px solid rgba(245,158,11,0.40)',
+            borderRadius: 10, color: '#fcd34d', fontSize: 13, cursor: 'pointer', marginTop: 8,
+          }}
+        >
+          <Settings style={{ width: 14, height: 14 }} />
+          設定画面へ
+        </motion.button>
       </div>
     );
   }
@@ -277,18 +477,32 @@ export function Dashboard() {
             {errorMsg}
           </p>
         )}
-        <motion.button
-          whileTap={{ scale: 0.96 }}
-          onClick={fetchAndDecrypt}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px',
-            background: 'rgba(59,130,246,0.22)', border: '1px solid rgba(59,130,246,0.40)',
-            borderRadius: 10, color: '#93c5fd', fontSize: 13, cursor: 'pointer',
-          }}
-        >
-          <RefreshCw style={{ width: 13, height: 13 }} />
-          再試行
-        </motion.button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={fetchAndDecrypt}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px',
+              background: 'rgba(59,130,246,0.22)', border: '1px solid rgba(59,130,246,0.40)',
+              borderRadius: 10, color: '#93c5fd', fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            <RefreshCw style={{ width: 13, height: 13 }} />
+            再試行
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => router.push('/identity')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px',
+              background: 'rgba(245,158,11,0.18)', border: '1px solid rgba(245,158,11,0.40)',
+              borderRadius: 10, color: '#fcd34d', fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            <Settings style={{ width: 13, height: 13 }} />
+            設定確認
+          </motion.button>
+        </div>
       </div>
     );
   }
@@ -438,13 +652,14 @@ export function Dashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8, scale: 0.96 }}
                   transition={{ delay: i * 0.04, duration: 0.20, ease: 'easeOut' }}
-                  whileHover={{ y: -2 }}
+                  whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(59,130,246,0.20)' }}
+                  onClick={() => setSelectedCard(card)}
                   style={{
                     background: color.bg,
                     border: `1px solid ${color.border}`,
                     borderRadius: 14,
                     padding: '12px 14px',
-                    cursor: 'default',
+                    cursor: 'pointer',
                   }}
                 >
                   {/* Header row: thumbnail + avatar + name/company */}
@@ -581,6 +796,16 @@ export function Dashboard() {
       >
         <Plus style={{ width: 22, height: 22, color: '#fff' }} strokeWidth={2.5} />
       </motion.button>
+
+      {/* 詳細表示モーダル */}
+      <AnimatePresence>
+        {selectedCard && (
+          <CardDetailModal
+            card={selectedCard}
+            onClose={() => setSelectedCard(null)}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );

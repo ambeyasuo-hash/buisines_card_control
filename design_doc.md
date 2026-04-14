@@ -748,4 +748,143 @@ Maps to business_cards table:
 ✅ Build 成功（No errors）
 
 ---
-Version: 5.0.7+ Phoenix Edition (Deep Midnight + Gradient Vitality) Status: Phase 7-3 Complete (c) 2026 ambe / Business_Card_Folder
+
+## 4. 運用・保守 (Operations & Maintenance)
+
+### 4.1 Vercel Cron Jobs による Supabase 生存維持
+
+**目的**: Supabase の無料プランが自動停止されるのを防ぐため、24時間に1回、軽量な API エンドポイントを実行して、プロジェクトをアクティブに保つ。
+
+**アーキテクチャ**:
+
+```
+┌─────────────────┐
+│ Vercel Cron     │
+│ (毎日 0:00 UTC) │
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────────────┐
+│ /api/cron/keep-alive     │
+│ (CRON_SECRET 認証)       │
+└────────┬─────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────┐
+│ Supabase (SELECT + UPDATE)           │
+│ - profiles テーブルへの軽量クエリ     │
+│ - 生存確認時刻の更新                  │
+└──────────────────────────────────────┘
+```
+
+**エンドポイント詳細**:
+
+| 項目 | 説明 |
+|------|------|
+| **URL** | `/api/cron/keep-alive` |
+| **メソッド** | `GET` \| `POST` |
+| **認証** | `Authorization: Bearer ${CRON_SECRET}` ヘッダー |
+| **リクエスト内容** | リクエストボディなし（ステートレス） |
+| **レスポンス** | `{ status: "success", timestamp: "2026-04-14T00:00:00Z" }` |
+
+**セキュリティ**:
+
+1. **CRON_SECRET**: Vercel 環境変数に設定（API エンドポイントで検証）
+2. **リクエスト認証**: ヘッダー `Authorization` で Bearer Token 方式
+3. **外部からのアクセス防止**: CRON_SECRET が一致した場合のみ処理実行
+4. **ログ記録**: Vercel Function Logs に実行時刻・ステータスを記録
+
+**Supabase クエリ内容**:
+
+```sql
+-- 1. profiles テーブルの生存確認クエリ
+SELECT COUNT(*) FROM profiles LIMIT 1;
+
+-- 2. 生存維持カラムの更新（オプション）
+UPDATE profiles 
+SET last_activity = NOW()
+WHERE id = '<system-user-id>'
+LIMIT 1;
+```
+
+**コスト効率**:
+
+- **実行頻度**: 1日1回（毎日 0:00 UTC）
+- **クエリ軽量性**: SELECT + UPDATE 合計 2 行のみ
+- **Vercel 無料枠**: 月 100,000 回の Function 実行 → 30 回で充分（１ヶ月）
+- **Supabase 無料枠**: 月 50,000 クエリ実行 → 30 回で充分
+
+**実装ファイル**:
+
+- `/src/app/api/cron/keep-alive/route.ts` — Keep-alive API エンドポイント
+- `vercel.json` — Cron スケジュール設定
+
+### 4.2 Vercel 設定 (vercel.json)
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/keep-alive",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+| フィールド | 説明 |
+|----------|------|
+| **path** | API エンドポイント（相対パス） |
+| **schedule** | Cron 式（UTC 時刻）<br>`0 0 * * *` = 毎日 0:00 UTC |
+
+**時刻変換**:
+- UTC 0:00 = JST 9:00（日本時間）
+- 無停止確保のため、日本時間の営業時間後（深夜）に実行
+
+### 4.3 環境変数設定 (Vercel Console)
+
+**Vercel Dashboard**: https://vercel.com/ambeyasuo-hash/ambe_business_card/settings/environment-variables
+
+| キー | 値 | 説明 |
+|-----|-----|------|
+| `CRON_SECRET` | `<生成されたシークレット>` | API 認証トークン（32 文字以上推奨） |
+| `SUPABASE_URL` | 既存値 | Supabase プロジェクト URL |
+| `SUPABASE_KEY` | 既存値 | Supabase API キー |
+
+**CRON_SECRET 生成方法**:
+
+```bash
+# ターミナルで実行
+openssl rand -base64 32
+```
+
+結果例: `xY7zK9mP2qLvW5nH8tG3jB6cD4fS1uR9E0=`
+
+### 4.4 運用監視・トラブルシューティング
+
+**ログ確認方法**:
+
+1. Vercel Dashboard → **Deployments** → 最新デプロイ
+2. **Functions** タブ → `/api/cron/keep-alive` を選択
+3. **Logs** で実行履歴・エラーメッセージを確認
+
+**トラブルシューティング**:
+
+| 症状 | 原因 | 対応 |
+|------|------|------|
+| `401 Unauthorized` | CRON_SECRET が不一致 | Vercel 環境変数を再確認 |
+| `500 Internal Server Error` | Supabase 接続失敗 | SUPABASE_URL/KEY を再確認 |
+| Cron が実行されない | vercel.json 未デプロイ | リデプロイして vercel.json を反映 |
+
+**手動トリガー（テスト用）**:
+
+```bash
+curl -X GET "https://ambe-business-card.vercel.app/api/cron/keep-alive" \
+  -H "Authorization: Bearer <CRON_SECRET>"
+
+# レスポンス例
+# { "status": "success", "timestamp": "2026-04-14T00:00:00Z" }
+```
+
+---
+Version: 5.0.7+ Phoenix Edition (Deep Midnight + Gradient Vitality) Status: Phase 7-3 Complete, Phase 8-1 Planning (c) 2026 ambe / Business_Card_Folder
