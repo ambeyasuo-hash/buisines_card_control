@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityPage } from '@/components/IdentityPage';
@@ -79,6 +79,17 @@ export default function Home() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+
+  // スキャン完了後の ?tab=list ディープリンク対応
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as ActiveTab | null;
+    if (tab && ['list', 'identity', 'rescue'].includes(tab)) {
+      setActiveTab(tab);
+      // URL をクリーンに戻す
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   return (
     <div className="w-full">
