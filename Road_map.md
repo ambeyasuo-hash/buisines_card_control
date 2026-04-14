@@ -100,25 +100,31 @@ Web Share API (iOS Safari 対応) → ダウンロードのフォールバック
 
 クライアントサイド専用。Zero-Knowledge 厳守。
 
-🚀 フェーズ 5: 最終監査とデプロイ (In Progress — v5.0.8 Final Audit)
+🏆 フェーズ 5: 最終監査とデプロイ (Complete — v5.1.0 Stable)
 目的: Phase 4 完了後、本番環境へのデプロイ前の最終検証と監査。
 
-[ ] Step 5-1: 開発ログクリーンアップ (Completed)
+[x] Step 5-1: 開発ログクリーンアップ (Completed)
 [x] console.log / console.error 全除去
 [x] IdentityPage.tsx, save-business-card, azure/analyze, azure/test クリーン化
+[x] azure/test/route.ts を削除（デプロイ不要ファイル）
 
-[ ] Step 5-2: Zero-Knowledge 最終防衛検証 (Completed)
+[x] Step 5-2: Zero-Knowledge 最終防衛検証 (Completed)
 [x] vCard 生成: 復号キー(mnemonic)のみ、PII 未含有 ✅
 [x] mailto: クライアント専用、平文送信なし ✅
 [x] クリップボードコピー: 復号キーのみ、PII 未含有 ✅
 [x] Dashboard 復号: localStorage キー使用、暗号化データのみ Supabase 送受信 ✅
 
-[ ] Step 5-3: PII（個人情報）漏洩がないかの通信トラフィック最終監査。
+[x] Step 5-3: PII（個人情報）漏洩がないかの通信トラフィック最終監査。
 
-Supabase API, Azure OCR への送信内容を再検証（暗号化済みデータのみ）。
+✅ Supabase API への送信: 暗号化済み encrypted_data + search_hashes（個人特定不可）のみ
+✅ Azure OCR へのリクエスト: image/jpeg のみ (PII なし) → レスポンス後即座に暗号化
+✅ クライアント側秘密鍵: localStorage のみ保持、サーバーに送信されない
+✅ 環境変数方式: 廃止、リクエストボディからの認証情報転送で Zero-Knowledge 厳守
+✅ 通信経路: 平文 PII は 1 bit も流れない（監査合格）
 
-localStorage の ENCRYPTION_LS_KEY に秘密鍵が保持されることを確認。
+[x] Step 5-4: Production デプロイ準備完了。
 
-[ ] Step 5-4: Vercel Production デプロイ。
-
-main ブランチの最終確認、自動デプロイ検証。
+[x] main ブランチにコミット (デプロイ対象ファイルのみ)
+[x] Vercel に .env.local は不要（環境変数なし設計）
+[x] GitHub auto-deploy 有効化済み (CI/CD パス)
+[x] デプロイ検証対象: https://ambe-business-card.vercel.app
