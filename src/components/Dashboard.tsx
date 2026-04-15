@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { createSupabaseClient, isSupabaseConfigured } from '@/lib/supabase-client';
 import { getOrCreateEncryptionKey, decryptData } from '@/lib/crypto';
 import { normalizePersonName, normalizeCompanyName, tokenizeForSearch } from '@/lib/normalize';
+import { getSessionManager } from '@/lib/auth-session';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,18 @@ export function Dashboard() {
   useEffect(() => {
     fetchAndDecrypt();
   }, [fetchAndDecrypt]);
+
+  // Session state monitoring
+  useEffect(() => {
+    const manager = getSessionManager();
+    const unsubscribe = manager.onStateChange((state) => {
+      // Reset search/sort when session state changes
+      if (state === 'LOCKED') {
+        setSearchQuery('');
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   // ── Search & Sort ─────────────────────────────────────────────────────────
 

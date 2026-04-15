@@ -6,10 +6,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityPage } from '@/components/IdentityPage';
 import { Dashboard } from '@/components/Dashboard';
 import { SettingsPage } from '@/components/SettingsPage';
+import { LockScreen } from '@/components/LockScreen';
 import { PWAInstallGuide } from '@/components/PWAInstallGuide';
 import { BackButton } from '@/components/BackButton';
 import { NewsTicker } from '@/components/NewsTicker';
 import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-react';
+import { getSessionManager, initializeSession, type SessionState } from '@/lib/auth-session';
+import { startWebAuthnAssertion } from '@/lib/webauthn';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
@@ -80,6 +83,22 @@ export default function Home() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [sessionState, setSessionState] = useState<SessionState>('LOCKED');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Initialize session & subscribe to state changes
+  useEffect(() => {
+    initializeSession();
+    const manager = getSessionManager();
+    setSessionState(manager.getState());
+
+    const unsubscribe = manager.onStateChange((newState) => {
+      setSessionState(newState);
+    });
+
+    return unsubscribe;
+  }, []);
 
   // スキャン完了後の ?tab=list ディープリンク対応
   useEffect(() => {
@@ -91,6 +110,81 @@ export default function Home() {
       window.history.replaceState({}, '', '/');
     }
   }, []);
+
+  // WebAuthn 認証ハンドラ
+  const handleWebAuthnAuth = async (): Promise<boolean> => {
+    try {
+      setIsAuthenticating(true);
+      setAuthError(null);
+
+      const manager = getSessionManager();
+      manager.startAuthenticating();
+
+      // Retrieve credential ID from localStorage
+      const credentialId = localStorage.getItem('webauthn_credential_id');
+      if (!credentialId) {
+        throw new Error('WebAuthn credential not registered');
+      }
+
+      // Start WebAuthn assertion
+      const masterKey = await startWebAuthnAssertion(credentialId);
+      if (!masterKey) {
+        throw new Error('WebAuthn assertion failed');
+      }
+
+      // Set master key in session
+      manager.setMasterKey(masterKey);
+      return true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Authentication failed';
+      setAuthError(msg);
+      getSessionManager().onAuthenticationFailed();
+      return false;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  // PIN 認証ハンドラ
+  const handlePINAuth = async (pin: string): Promise<boolean> => {
+    try {
+      setIsAuthenticating(true);
+      setAuthError(null);
+
+      const manager = getSessionManager();
+      const success = await manager.authenticateWithPIN(pin);
+      if (!success) {
+        throw new Error('PIN authentication failed');
+      }
+      return true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Authentication failed';
+      setAuthError(msg);
+      return false;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  // ログアウトハンドラ
+  const handleLogout = () => {
+    const manager = getSessionManager();
+    manager.lock();
+    setActiveTab('dashboard');
+  };
+
+  // Lock Screen overlay
+  if (sessionState === 'LOCKED') {
+    return (
+      <LockScreen
+        onAuthenticateWebAuthn={handleWebAuthnAuth}
+        onAuthenticatePIN={handlePINAuth}
+        isAuthenticating={isAuthenticating}
+        error={authError || undefined}
+        supportsPIN={getSessionManager().isPINEnabled()}
+      />
+    );
+  }
 
   return (
     <div className="w-full">
@@ -144,6 +238,7 @@ export default function Home() {
                 <motion.button
                   whileHover={{ opacity: 0.75, scale: 1.04 }}
                   whileTap={{ scale: 0.93 }}
+                  onClick={handleLogout}
                   className="flex items-center gap-1.5 cursor-pointer"
                   style={{ color: 'rgba(255,255,255,0.32)', fontSize: '11px' }}
                 >

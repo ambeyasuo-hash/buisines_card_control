@@ -25,6 +25,7 @@ import { invalidateSupabaseClient } from '@/lib/supabase-client';
 import { keyB64ToMnemonic } from '@/lib/mnemonic';
 import { useFontSize } from '@/lib/font-size-context';
 import { AlertTriangle as AlertTriangleIcon } from 'lucide-react';
+import { getSessionManager } from '@/lib/auth-session';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS = {
@@ -1443,6 +1444,18 @@ export function SettingsPage() {
     setForm(loaded);
     setValidation(computeValidation(loaded));
     setHasChanges(false);
+  }, []);
+
+  // Session state monitoring
+  useEffect(() => {
+    const manager = getSessionManager();
+    const unsubscribe = manager.onStateChange((state) => {
+      // Clear sensitive form fields when session is locked
+      if (state === 'LOCKED') {
+        setVis({ supabaseAnonKey: false, azureKey: false, geminiKey: false });
+      }
+    });
+    return unsubscribe;
   }, []);
 
   const field = useCallback(
