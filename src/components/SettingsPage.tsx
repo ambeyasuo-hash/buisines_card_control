@@ -92,13 +92,19 @@ function validateSupabaseKey(key: string): boolean {
 }
 
 function validateAzureEndpoint(endpoint: string): boolean {
-  return endpoint.trim().startsWith('https://') && endpoint.includes('.cognitiveservices.azure.com');
+  const trimmed = endpoint.trim();
+  // Accept both formrecognizer and cognitiveservices endpoints
+  return (
+    trimmed.startsWith('https://') &&
+    (trimmed.includes('.cognitiveservices.azure.com') || trimmed.includes('api.cognitive.microsoft.com'))
+  );
 }
 
 function validateAzureKey(key: string): boolean {
   // Azure keys are Base64 strings, typically 32+ characters
   // Allow alphanumeric + Base64 special chars (=, +, /)
-  return key.trim().length >= 30;
+  // More lenient: accept 20+ chars to allow for different key formats
+  return key.trim().length >= 20;
 }
 
 function validateGeminiKey(key: string): boolean {
