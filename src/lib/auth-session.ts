@@ -42,6 +42,7 @@ class AuthSessionManager {
   private broadcastChannel: BroadcastChannel | null = null;
   private config: SessionConfig;
   private listeners: Set<(state: SessionState) => void> = new Set();
+  private skipLockFlag: boolean = false; // One-time bypass flag for setup flow
 
   constructor(config: Partial<SessionConfig> = {}) {
     this.config = {
@@ -67,6 +68,23 @@ class AuthSessionManager {
 
   public isLocked(): boolean {
     return this.currentState === 'LOCKED';
+  }
+
+  /**
+   * Lock screen を一回だけバイパス（初期セットアップフロー用）
+   * SettingsPage へ遷移時に呼び出し、設定画面で認証を求めない
+   */
+  public skipLockOnce(): void {
+    this.skipLockFlag = true;
+  }
+
+  /**
+   * Skip lock フラグをチェックして消費
+   */
+  public consumeSkipLockFlag(): boolean {
+    const flag = this.skipLockFlag;
+    this.skipLockFlag = false; // One-time use
+    return flag;
   }
 
   // ─── Master Key Management ────────────────────────────────────────────
@@ -439,6 +457,9 @@ export const session = {
   authenticateWithPIN: (pin: string) => getSessionManager().authenticateWithPIN(pin),
   registerPIN: (pin: string) => getSessionManager().registerPIN(pin),
   isPINEnabled: () => getSessionManager().isPINEnabled(),
+  // Setup flow bypass
+  skipLockOnce: () => getSessionManager().skipLockOnce(),
+  consumeSkipLockFlag: () => getSessionManager().consumeSkipLockFlag(),
 };
 
 /**

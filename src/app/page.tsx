@@ -96,6 +96,9 @@ export default function Home() {
     initializeSession();
     const manager = getSessionManager();
 
+    // Check if we should skip lock screen (setup flow bypass)
+    const shouldSkipLock = manager.consumeSkipLockFlag();
+
     // Check if security (WebAuthn/PIN) is configured
     const configured = isSecurityConfigured();
     setSecurityConfigured(configured);
@@ -104,6 +107,9 @@ export default function Home() {
     if (!configured) {
       setShowSetupPrompt(true);
       // Skip lock screen and go directly to dashboard
+      setSessionState('UNLOCKED');
+    } else if (shouldSkipLock) {
+      // Setup flow: skip lock screen for initial registration
       setSessionState('UNLOCKED');
     } else {
       setSessionState(manager.getState());
@@ -240,7 +246,10 @@ export default function Home() {
                 生体認証（FaceID/指紋）または PIN で、あなたの名刺を保護します。
               </p>
               <button
-                onClick={() => setActiveTab('rescue')}
+                onClick={() => {
+                  getSessionManager().skipLockOnce();
+                  setActiveTab('rescue');
+                }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/30 hover:bg-amber-500/50
                            text-amber-50 font-medium transition-colors duration-200
                            border border-amber-500/50"

@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { DevicePairingModal } from './DevicePairingModal';
 import { PersistenceGuideSection } from './PersistenceGuideSection';
+import { SecuritySetup } from './SecuritySetup';
+import { isSecurityConfigured } from '@/lib/webauthn';
 import {
   checkSupabaseConnection,
   checkAzureConnectionViaServer,
@@ -2277,11 +2279,52 @@ export function SettingsPage() {
         </motion.a>
       </motion.div>
 
+      {/* ═══ 3.5 Security Setup (WebAuthn/PIN) ═══ */}
+      {(() => {
+        const configured = isSecurityConfigured();
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.16, duration: 0.24 }}
+            style={{
+              background: 'linear-gradient(150deg, rgba(59,130,246,0.12) 0%, rgba(139,92,246,0.06) 100%)',
+              border: `1px solid ${configured ? 'rgba(16,185,129,0.25)' : 'rgba(217,119,6,0.25)'}`,
+              borderRadius: '12px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            {!configured && (
+              <div
+                style={{
+                  background: 'rgba(217,119,6,0.15)',
+                  border: '1px solid rgba(217,119,6,0.30)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertTriangle style={{ width: '14px', height: '14px', color: 'rgba(234,179,8,0.85)', flexShrink: 0 }} />
+                <span style={{ fontSize: '11px', color: 'rgba(234,179,8,0.85)' }}>
+                  未設定：生体認証または PIN でセキュリティを有効化してください
+                </span>
+              </div>
+            )}
+            <SecuritySetup />
+          </motion.div>
+        );
+      })()}
+
       {/* ═══ 4. Encryption Key Management ═══ */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.20, duration: 0.24 }}
+        transition={{ delay: 0.24, duration: 0.24 }}
       >
         <EncryptionKeySection />
       </motion.div>
@@ -2293,7 +2336,7 @@ export function SettingsPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.28, duration: 0.24 }}
+        transition={{ delay: 0.32, duration: 0.24 }}
         style={{
           background: 'linear-gradient(150deg, rgba(59,130,246,0.12) 0%, rgba(34,197,94,0.06) 100%)',
           border: '1px solid rgba(59,130,246,0.25)', borderRadius: '12px', padding: '16px',
