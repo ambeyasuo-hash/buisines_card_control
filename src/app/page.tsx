@@ -12,7 +12,7 @@ import { BackButton } from '@/components/BackButton';
 import { NewsTicker } from '@/components/NewsTicker';
 import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-react';
 import { getSessionManager, initializeSession, type SessionState } from '@/lib/auth-session';
-import { assertWebAuthnCredential } from '@/lib/webauthn';
+import { assertWebAuthnCredential, isSecurityConfigured } from '@/lib/webauthn';
 import { deriveWrappingKeyFromAssertion, unwrapMasterKey } from '@/lib/crypto';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
@@ -88,12 +88,27 @@ export default function Home() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [supportsPIN, setSupportsPIN] = useState(false);
+  const [securityConfigured, setSecurityConfigured] = useState(false);
+  const [showSetupPrompt, setShowSetupPrompt] = useState(false);
 
-  // Initialize session & subscribe to state changes
+  // Initialize session & check security configuration
   useEffect(() => {
     initializeSession();
     const manager = getSessionManager();
-    setSessionState(manager.getState());
+
+    // Check if security (WebAuthn/PIN) is configured
+    const configured = isSecurityConfigured();
+    setSecurityConfigured(configured);
+
+    // If not configured, show setup prompt
+    if (!configured) {
+      setShowSetupPrompt(true);
+      // Skip lock screen and go directly to dashboard
+      setSessionState('UNLOCKED');
+    } else {
+      setSessionState(manager.getState());
+    }
+
     setSupportsPIN(manager.isPINEnabled());
 
     const unsubscribe = manager.onStateChange((newState) => {
@@ -182,8 +197,8 @@ export default function Home() {
     setActiveTab('dashboard');
   };
 
-  // Lock Screen overlay
-  if (sessionState === 'LOCKED') {
+  // Lock Screen overlay - only show if security is configured AND session is locked
+  if (securityConfigured && sessionState === 'LOCKED') {
     return (
       <LockScreen
         onAuthenticateWebAuthn={handleWebAuthnAuth}
@@ -191,6 +206,12 @@ export default function Home() {
         isAuthenticating={isAuthenticating}
         error={authError || undefined}
         supportsPIN={supportsPIN}
+        onResetSession={() => {
+          // Clear session and reload to go back to setup
+          getSessionManager().destroy();
+          localStorage.clear();
+          window.location.reload();
+        }}
       />
     );
   }
@@ -199,6 +220,44 @@ export default function Home() {
     <div className="w-full">
       {/* PWA Install Guide */}
       <PWAInstallGuide />
+
+      {/* Setup Prompt - shown when security not configured */}
+      {showSetupPrompt && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="mx-4 mt-4 p-4 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20
+                     border border-amber-500/40 backdrop-blur-sm"
+        >
+          <div className="flex items-start gap-3">
+            <div className="text-amber-300 mt-0.5">⚡</div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-50 text-sm mb-1">
+                セキュリティをセットアップしてください
+              </h3>
+              <p className="text-xs text-amber-100/80 mb-3">
+                生体認証（FaceID/指紋）または PIN で、あなたの名刺を保護します。
+              </p>
+              <button
+                onClick={() => setActiveTab('rescue')}
+                className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/30 hover:bg-amber-500/50
+                           text-amber-50 font-medium transition-colors duration-200
+                           border border-amber-500/50"
+              >
+                今すぐセットアップ →
+              </button>
+            </div>
+            <button
+              onClick={() => setShowSetupPrompt(false)}
+              className="text-amber-300 hover:text-amber-200 text-lg leading-none"
+              title="閉じる"
+            >
+              ✕
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
 

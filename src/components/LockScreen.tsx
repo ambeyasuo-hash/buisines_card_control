@@ -27,6 +27,7 @@ interface LockScreenProps {
   onAuthenticateWebAuthn: () => Promise<boolean>;
   onAuthenticatePIN: (pin: string) => Promise<boolean>;
   onShowRecovery?: () => void;
+  onResetSession?: () => void;
   isAuthenticating?: boolean;
   error?: string;
   supportsPIN?: boolean;
@@ -36,6 +37,7 @@ export function LockScreen({
   onAuthenticateWebAuthn,
   onAuthenticatePIN,
   onShowRecovery,
+  onResetSession,
   isAuthenticating = false,
   error,
   supportsPIN = true,
@@ -159,7 +161,37 @@ export function LockScreen({
             className="w-full rounded-xl bg-red-500/10 border border-red-500/30 p-4 flex items-start gap-3"
           >
             <AlertTriangle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-300">{localError || error}</p>
+            <div className="flex-1">
+              <p className="text-sm text-red-300">{localError || error}</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Security Configuration Error */}
+        {!supportsWebAuthn && !supportsPIN && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full rounded-xl bg-red-500/10 border border-red-500/30 p-4 flex items-start gap-3"
+          >
+            <AlertTriangle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-red-300 mb-3">
+                認証情報が登録されていません。再セットアップしてください。
+              </p>
+              {onResetSession && (
+                <motion.button
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={onResetSession}
+                  className="text-xs px-3 py-2 rounded-lg bg-red-500/30 hover:bg-red-500/50
+                             text-red-200 font-medium transition-colors duration-200
+                             border border-red-500/50"
+                >
+                  セットアップをリセット
+                </motion.button>
+              )}
+            </div>
           </motion.div>
         )}
 
@@ -284,15 +316,28 @@ export function LockScreen({
           </>
         )}
 
-        {/* Recovery Alternative */}
-        <motion.button
-          whileHover={{ opacity: 0.8 }}
-          onClick={onShowRecovery}
-          className="text-sm text-muted-foreground hover:text-foreground
-                     underline transition-colors duration-200 mt-2"
-        >
-          リカバリキーで復旧
-        </motion.button>
+        {/* Recovery & Reset Options */}
+        <div className="flex flex-col items-center gap-2 mt-2">
+          <motion.button
+            whileHover={{ opacity: 0.8 }}
+            onClick={onShowRecovery}
+            className="text-sm text-muted-foreground hover:text-foreground
+                       underline transition-colors duration-200"
+          >
+            リカバリキーで復旧
+          </motion.button>
+
+          {onResetSession && (
+            <motion.button
+              whileHover={{ opacity: 0.8 }}
+              onClick={onResetSession}
+              className="text-xs text-red-400 hover:text-red-300
+                         underline transition-colors duration-200"
+            >
+              セットアップをリセット
+            </motion.button>
+          )}
+        </div>
       </motion.div>
 
       {/* Footer Info */}

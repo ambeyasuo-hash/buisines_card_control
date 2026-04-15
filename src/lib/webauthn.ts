@@ -69,6 +69,39 @@ export function isWebAuthnEnabled(): boolean {
   return localStorage.getItem(LS_KEYS.enabled) === 'true';
 }
 
+/**
+ * セキュリティ設定が完了しているか確認（登録ゲート）
+ *
+ * 以下のいずれかが登録済みの場合、true を返す：
+ *   - WebAuthn が有効化
+ *   - PIN が登録済み
+ *   - Wrapped master key が保存済み
+ *
+ * Zero-Knowledge: 秘密情報の存否には触れず、設定の有無のみを判定
+ *
+ * @returns true if any security method is configured
+ */
+export function isSecurityConfigured(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+
+  // WebAuthn が有効か確認
+  if (localStorage.getItem(LS_KEYS.enabled) === 'true') {
+    return true;
+  }
+
+  // PIN が登録されているか確認
+  if (localStorage.getItem('pin_enabled') === 'true') {
+    return true;
+  }
+
+  // Wrapped master key が保存されているか確認
+  if (localStorage.getItem('encryption_key_wrapped_b64')) {
+    return true;
+  }
+
+  return false;
+}
+
 // ─── Credential Registration ──────────────────────────────────────────────
 
 /**
