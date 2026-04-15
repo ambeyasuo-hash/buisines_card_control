@@ -228,10 +228,15 @@ export async function wrapMasterKey(
     console.log('[Crypto] Encrypting master key with AES-256-GCM...');
     let encryptedData: ArrayBuffer;
     try {
+      // Convert to ArrayBuffer to ensure compatibility with SubtleCrypto API
+      const keyBuffer = masterKeyBytes.buffer.slice(
+        masterKeyBytes.byteOffset,
+        masterKeyBytes.byteOffset + masterKeyBytes.byteLength
+      ) as ArrayBuffer;
       encryptedData = await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv },
         wrappingKey,
-        masterKeyBytes
+        keyBuffer
       );
       console.log(`[Crypto] Encryption successful: ${encryptedData.byteLength} bytes`);
     } catch (error) {
