@@ -1,10 +1,16 @@
 /**
- * Azure Connection Test Endpoint
- * Lightweight health check for Azure Document Intelligence API
+ * Azure Document Intelligence Connection Test
+ * Tests connectivity to Azure Document Intelligence (Form Recognizer) API
+ *
+ * Success Criteria:
+ * - 200, 201, 202: Full success
+ * - 400: Connection successful (image data missing, but API responded)
+ * - 401, 403: Authentication failure (invalid key)
+ * - 404: Path not found (try next API version)
  *
  * POST /api/azure/test
  * Body: { endpoint: string; apiKey: string }
- * Response: { ok: boolean; message: string; code?: string }
+ * Response: { ok: boolean; message: string; code?: string; debug?: string }
  */
 
 interface TestRequest {
@@ -16,32 +22,82 @@ interface TestResponse {
   ok: boolean;
   message: string;
   code?: string;
+  debug?: string;
+}
+
+/**
+ * Normalize endpoint URL: extract origin, remove trailing slashes
+ */
+function normalizeEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim();
+
+  try {
+    const url = new URL(trimmed);
+    // Return origin (protocol + hostname) without pathname
+    return url.origin;
+  } catch {
+    // If URL constructor fails, do manual normalization
+    return trimmed.replace(/\/+$/, '');
+  }
+}
+
+/**
+ * Build complete API request URL
+ */
+function buildApiUrl(endpoint: string, path: string): string {
+  const normalized = normalizeEndpoint(endpoint);
+  // Remove leading slash from path if present
+  const cleanPath = path.startsWith('/') ? path : '/' + path;
+  return normalized + cleanPath;
 }
 
 export async function POST(request: Request): Promise<Response> {
   try {
     const body = (await request.json()) as TestRequest;
 
-    const endpoint = (body.endpoint ?? '').trim().replace(/\/$/, '');
+    const rawEndpoint = (body.endpoint ?? '').trim();
     const apiKey = (body.apiKey ?? '').trim();
 
     // ─── Validation ──────────────────────────────────────────────────────────
 
-    if (!endpoint) {
+    if (!rawEndpoint) {
       return Response.json(
-        { ok: false, message: 'Azure Endpoint が空です', code: 'EMPTY_ENDPOINT' } as TestResponse,
+        {
+          ok: false,
+          message: 'Azure Endpoint が空です',
+          code: 'EMPTY_ENDPOINT',
+        } as TestResponse,
         { status: 200 }
       );
     }
 
     if (!apiKey) {
       return Response.json(
-        { ok: false, message: 'Azure API Key が空です', code: 'EMPTY_KEY' } as TestResponse,
+        {
+          ok: false,
+          message: 'Azure API Key が空です',
+          code: 'EMPTY_KEY',
+        } as TestResponse,
         { status: 200 }
       );
     }
 
-    // ─── Endpoint URL format validation ───────────────────────────────────────
+    // Normalize endpoint
+    let endpoint: string;
+    try {
+      endpoint = normalizeEndpoint(rawEndpoint);
+    } catch (err) {
+      return Response.json(
+        {
+          ok: false,
+          message: 'エンドポイント URL の形式が不正です',
+          code: 'INVALID_URL',
+        } as TestResponse,
+        { status: 200 }
+      );
+    }
+
+    // ─── Endpoint validation ──────────────────────────────────────────────────
 
     if (!endpoint.startsWith('https://')) {
       return Response.json(
@@ -59,67 +115,49 @@ export async function POST(request: Request): Promise<Response> {
         {
           ok: false,
           message: 'エンドポイントに .cognitiveservices.azure.com が含まれていません',
-          code: 'INVALID_ENDPOINT_DOMAIN',
+          code: 'INVALID_DOMAIN',
         } as TestResponse,
         { status: 200 }
       );
     }
 
-    // Extract region and resource name from endpoint
-    // Format: https://{region}.api.cognitive.microsoft.com or https://{resourceName}.cognitiveservices.azure.com
-    const urlObj = new URL(endpoint);
-    const hostname = urlObj.hostname;
+    // ─── API Key validation ───────────────────────────────────────────────────
 
-    if (!hostname.includes('cognitiveservices.azure.com')) {
+    if (apiKey.length < 20) {
       return Response.json(
         {
           ok: false,
-          message: '有効な Azure エンドポイントのホスト名ではありません',
-          code: 'INVALID_HOST',
-        } as TestResponse,
-        { status: 200 }
-      );
-    }
-
-    // ─── API Key format validation ────────────────────────────────────────────
-
-    if (apiKey.length < 30) {
-      return Response.json(
-        {
-          ok: false,
-          message: 'API キーが短すぎます（最小30文字）',
+          message: 'API キーが短すぎます（最小20文字）',
           code: 'KEY_TOO_SHORT',
         } as TestResponse,
         { status: 200 }
       );
     }
 
-    // ─── Test connection ─────────────────────────────────────────────────────
+    // ─── Test connection with both API versions ───────────────────────────────
 
-    // Build test URL using both possible API paths
-    let lastError: Error | null = null;
+    // API paths to try (in order of priority)
+    const apiPaths = [
+      // v3.1 GA (stable)
+      '/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31',
+      // v4.0 Preview (latest)
+      '/documentintelligence/document-models/prebuilt-businessCard:analyze?api-version=2024-02-29-preview',
+    ];
+
     let lastStatus = 0;
+    let lastErrorBody = '';
+    let successfulPath = '';
 
-    for (const pathSuffix of [
-      '/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31&locale=ja-JP',
-      '/documentintelligence/document-models/prebuilt-businessCard:analyze?api-version=2023-10-31-preview&locale=ja-JP',
-    ]) {
+    for (const apiPath of apiPaths) {
       try {
-        // Build test URL properly using URL object to avoid double slashes
-        const baseUrl = endpoint.replace(/\/+$/, ''); // Remove trailing slashes
-        const testUrl = new URL(baseUrl);
-        testUrl.pathname = (testUrl.pathname.replace(/\/+$/, '') || '') + pathSuffix.split('?')[0];
+        // Build complete URL
+        const fullUrl = buildApiUrl(endpoint, apiPath);
 
-        // Add query parameters properly
-        const params = pathSuffix.split('?')[1];
-        if (params) {
-          params.split('&').forEach(pair => {
-            const [key, value] = pair.split('=');
-            testUrl.searchParams.set(key, value);
-          });
-        }
+        // Debug: log URL with masked key
+        const debugUrl = fullUrl + ' (key: ' + apiKey.substring(0, 4) + '***' + apiKey.substring(apiKey.length - 4) + ')';
+        console.log('[Azure Test] Testing path:', debugUrl);
 
-        // Create a minimal test payload (empty JPEG header)
+        // Create minimal test payload (empty JPEG header)
         const minimalImage = Buffer.from([
           0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
           0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
@@ -144,7 +182,8 @@ export async function POST(request: Request): Promise<Response> {
           0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00, 0xfb, 0x51, 0x50, 0xff, 0xd9,
         ]);
 
-        const res = await fetch(testUrl, {
+        // Send test request
+        const res = await fetch(fullUrl, {
           method: 'POST',
           headers: {
             'Ocp-Apim-Subscription-Key': apiKey,
@@ -154,119 +193,106 @@ export async function POST(request: Request): Promise<Response> {
         });
 
         lastStatus = res.status;
+        const responseText = await res.text();
+        lastErrorBody = responseText;
 
-        // ─── Handle Azure responses ──────────────────────────────────────────
+        console.log(`[Azure Test] Path: ${apiPath.split('?')[0]} - Status: ${res.status}`);
 
+        // ─── Success cases ────────────────────────────────────────────────────
         if (res.status === 202 || res.status === 201 || res.status === 200) {
-          // Success: API accepted the request
+          console.log('[Azure Test] ✓ Connection successful (202/201/200)');
           return Response.json(
-            { ok: true, message: 'Azure に接続しました ✓' } as TestResponse,
+            {
+              ok: true,
+              message: 'Azure Document Intelligence に接続しました ✓',
+              code: `HTTP_${res.status}`,
+            } as TestResponse,
             { status: 200 }
           );
         }
 
+        // ─── 400 Bad Request = Connection successful (no image data) ──────────
+        if (res.status === 400) {
+          console.log('[Azure Test] ✓ Connection successful (400 - no image)');
+          successfulPath = apiPath;
+          // Return success - the API responded, meaning the endpoint exists and auth works
+          return Response.json(
+            {
+              ok: true,
+              message:
+                'Azure Document Intelligence に接続しました ✓\n\n' +
+                '（400エラーは正常です。テストペイロードに有効な画像がないため。実際の解析時は正常に動作します。）',
+              code: 'HTTP_400_EXPECTED',
+            } as TestResponse,
+            { status: 200 }
+          );
+        }
+
+        // ─── Authentication errors ────────────────────────────────────────────
         if (res.status === 401 || res.status === 403) {
+          console.log('[Azure Test] ✗ Authentication failed');
+          const errorMsg = responseText
+            ? `${responseText.substring(0, 200)}`
+            : 'API キーが無効です';
           return Response.json(
             {
               ok: false,
-              message: 'API キーが無効です。Azure ポータルでキーを確認してください',
+              message: `認証エラー (${res.status}):\n${errorMsg}`,
               code: 'INVALID_KEY',
             } as TestResponse,
             { status: 200 }
           );
         }
 
+        // ─── Not found - try next API version ──────────────────────────────────
         if (res.status === 404) {
-          // Try next URL
+          console.log('[Azure Test] Path not found (404), trying next version...');
           continue;
         }
 
-        if (res.status === 400) {
-          // Might be malformed request (from test image), but endpoint exists
-          // Try next URL or report success if both fail with 400
-          continue;
-        }
-
-        // Other error codes
-        const text = await res.text();
-        lastError = new Error(`HTTP ${res.status}: ${text}`);
+        // ─── Other errors ─────────────────────────────────────────────────────
+        console.log(`[Azure Test] Unexpected status: ${res.status}`);
+        const errorMsg = responseText.substring(0, 300);
+        continue;
       } catch (err) {
-        lastError = err as Error;
+        const error = err as Error;
+        console.log(`[Azure Test] Error: ${error.message}`);
+        // Continue to next path
+        continue;
       }
     }
 
-    // ─── If we get here, all URLs failed ──────────────────────────────────────
+    // ─── All paths failed ──────────────────────────────────────────────────────
+
+    console.log(`[Azure Test] ✗ All paths failed. Last status: ${lastStatus}`);
 
     if (lastStatus === 404) {
       return Response.json(
         {
           ok: false,
-          message: 'Azure エンドポイントが見つかりません。エンドポイント URL を確認してください',
-          code: 'ENDPOINT_NOT_FOUND',
+          message:
+            'Azure エンドポイント が見つかりません。\n\n' +
+            'エンドポイント URL を確認してください:\n' +
+            'https://businesscard-ngtest.cognitiveservices.azure.com/\n\n' +
+            '（末尾の / は自動的に削除されます）',
+          code: 'PATH_NOT_FOUND',
+          debug: `Last status: ${lastStatus}`,
         } as TestResponse,
         { status: 200 }
       );
     }
 
-    if (lastStatus === 400) {
+    if (lastStatus === 0) {
       return Response.json(
         {
           ok: false,
           message:
-            'エンドポイントが正しくない形式です。以下の形式を確認してください:\n' +
-            'https://{region}.api.cognitive.microsoft.com\n' +
-            'または\n' +
-            'https://{resourceName}.cognitiveservices.azure.com',
-          code: 'INVALID_ENDPOINT_FORMAT',
-        } as TestResponse,
-        { status: 200 }
-      );
-    }
-
-    return Response.json(
-      {
-        ok: false,
-        message: lastError
-          ? `Azure へのリクエストに失敗: ${lastError.message}`
-          : 'Azure への接続に失敗しました',
-        code: `HTTP_${lastStatus}`,
-      } as TestResponse,
-      { status: 200 }
-    );
-  } catch (err) {
-    const error = err as Error;
-    const errorMsg = error.message.toLowerCase();
-
-    // Handle "The string did not match the expected pattern" error
-    if (errorMsg.includes('pattern') || errorMsg.includes('invalid') || errorMsg.includes('not match')) {
-      return Response.json(
-        {
-          ok: false,
-          message:
-            'エンドポイント URL の形式が正しくありません。\n\n' +
-            '✓ 正しい形式:\n' +
-            '  https://japaneast.api.cognitive.microsoft.com\n' +
-            '  https://myresource.cognitiveservices.azure.com\n\n' +
-            '✗ よくある間違い:\n' +
-            '  • スペースやタブが含まれている\n' +
-            '  • https:// が含まれていない\n' +
-            '  • URL末尾に余分なスラッシュがある\n' +
-            '  • 小文字以外が含まれている',
-          code: 'INVALID_URL_FORMAT',
-        } as TestResponse,
-        { status: 200 }
-      );
-    }
-
-    if (errorMsg.includes('invalid url')) {
-      return Response.json(
-        {
-          ok: false,
-          message:
-            'エンドポイント URL の形式が不正です。\n\n' +
-            'https:// で始まり、有効なホスト名を含む必要があります。\n' +
-            '例: https://japaneast.api.cognitive.microsoft.com',
-          code: 'INVALID_URL_FORMAT',
+            'エンドポイント への接続に失敗しました。\n\n' +
+            '以下を確認してください:\n' +
+            '1. エンドポイント URL が正しい\n' +
+            '2. インターネット接続がある\n' +
+            '3. Azure ファイアウォール設定を確認',
+          code: 'NETWORK_ERROR',
         } as TestResponse,
         { status: 200 }
       );
@@ -276,12 +302,22 @@ export async function POST(request: Request): Promise<Response> {
       {
         ok: false,
         message:
-          'エンドポイント URL またはキーが正しくありません。\n\n' +
-          '以下を確認してください:\n' +
-          '• URL は https:// で始まっている\n' +
-          '• .cognitiveservices.azure.com または api.cognitive.microsoft.com を含む\n' +
-          '• API キーは 20 文字以上',
-        code: 'VALIDATION_ERROR',
+          `Azure への リクエストが失敗しました。\n\n` +
+          `ステータス: ${lastStatus}\n\n` +
+          (lastErrorBody ? `エラー詳細:\n${lastErrorBody.substring(0, 300)}` : 'エラー詳細なし'),
+        code: `HTTP_${lastStatus}`,
+      } as TestResponse,
+      { status: 200 }
+    );
+  } catch (err) {
+    const error = err as Error;
+    console.log('[Azure Test] Unexpected error:', error.message);
+
+    return Response.json(
+      {
+        ok: false,
+        message: `エラー: ${error.message}`,
+        code: 'UNKNOWN_ERROR',
       } as TestResponse,
       { status: 200 }
     );
