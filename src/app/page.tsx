@@ -12,7 +12,8 @@ import { BackButton } from '@/components/BackButton';
 import { NewsTicker } from '@/components/NewsTicker';
 import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-react';
 import { getSessionManager, initializeSession, type SessionState } from '@/lib/auth-session';
-import { startWebAuthnAssertion } from '@/lib/webauthn';
+import { assertWebAuthnCredential } from '@/lib/webauthn';
+import { deriveWrappingKeyFromAssertion, unwrapMasterKey } from '@/lib/crypto';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
@@ -86,12 +87,14 @@ export default function Home() {
   const [sessionState, setSessionState] = useState<SessionState>('LOCKED');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [supportsPIN, setSupportsPIN] = useState(false);
 
   // Initialize session & subscribe to state changes
   useEffect(() => {
     initializeSession();
     const manager = getSessionManager();
     setSessionState(manager.getState());
+    setSupportsPIN(manager.isPINEnabled());
 
     const unsubscribe = manager.onStateChange((newState) => {
       setSessionState(newState);
@@ -120,19 +123,25 @@ export default function Home() {
       const manager = getSessionManager();
       manager.startAuthenticating();
 
-      // Retrieve credential ID from localStorage
-      const credentialId = localStorage.getItem('webauthn_credential_id');
-      if (!credentialId) {
-        throw new Error('WebAuthn credential not registered');
+      // Step 1: WebAuthn assertion を実行
+      const assertionResult = await assertWebAuthnCredential();
+      if (!assertionResult.success || !assertionResult.signature) {
+        throw new Error(assertionResult.message || 'WebAuthn assertion failed');
       }
 
-      // Start WebAuthn assertion
-      const masterKey = await startWebAuthnAssertion(credentialId);
-      if (!masterKey) {
-        throw new Error('WebAuthn assertion failed');
+      // Step 2: Assertion signature から wrapping key を導出
+      const wrappingKey = await deriveWrappingKeyFromAssertion(assertionResult.signature);
+
+      // Step 3: Wrapped master key を localStorage から取得して unwrap
+      const wrappedKeyB64 = localStorage.getItem('encryption_key_wrapped_b64');
+      if (!wrappedKeyB64) {
+        throw new Error('Wrapped master key not found. Please register a PIN first.');
       }
 
-      // Set master key in session
+      // Step 4: Master key を unwrap
+      const masterKey = await unwrapMasterKey(wrappedKeyB64, wrappingKey);
+
+      // Step 5: Session に master key を設定
       manager.setMasterKey(masterKey);
       return true;
     } catch (error) {
@@ -181,7 +190,7 @@ export default function Home() {
         onAuthenticatePIN={handlePINAuth}
         isAuthenticating={isAuthenticating}
         error={authError || undefined}
-        supportsPIN={getSessionManager().isPINEnabled()}
+        supportsPIN={supportsPIN}
       />
     );
   }

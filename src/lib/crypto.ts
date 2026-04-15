@@ -239,6 +239,45 @@ export async function unwrapMasterKey(
 }
 
 /**
+ * WebAuthn assertion signature から wrapping key を導出
+ * HMAC-SHA256 ベース（deterministic な wrapping key）
+ *
+ * @param signature WebAuthn assertion.response.signature (ArrayBuffer)
+ * @returns AES-256-GCM 用の CryptoKey
+ */
+export async function deriveWrappingKeyFromAssertion(
+  signature: ArrayBuffer
+): Promise<CryptoKey> {
+  // signature を HMAC key として使用
+  const signatureKey = await crypto.subtle.importKey(
+    'raw',
+    signature,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  // Fixed text を HMAC sign して wrapping key を導出
+  const hmacInput = new TextEncoder().encode('wrapping-key-derivation');
+  const hmacOutput = await crypto.subtle.sign(
+    'HMAC',
+    signatureKey,
+    hmacInput
+  );
+
+  // HMAC output の最初の32バイトを wrapping key として使用
+  const wrappingKeyBits = new Uint8Array(hmacOutput).slice(0, 32);
+
+  return crypto.subtle.importKey(
+    'raw',
+    wrappingKeyBits,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+  );
+}
+
+/**
  * PIN の強度チェック（UI用）
  * LockScreen から PIN pad に入力中にリアルタイムで呼び出し
  *
