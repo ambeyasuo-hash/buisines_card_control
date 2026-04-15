@@ -1378,12 +1378,14 @@ export function SettingsPage() {
   const [toast, setToast]     = useState<{ type: ToastType; message: string } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [showDevicePairingModal, setShowDevicePairingModal] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
     const loaded = loadStorage();
     setForm(loaded);
     setValidation(computeValidation(loaded));
+    setHasChanges(false);
   }, []);
 
   const field = useCallback(
@@ -1392,6 +1394,7 @@ export function SettingsPage() {
         const updated = { ...form, [key]: value };
         setForm(updated);
         setValidation(computeValidation(updated));
+        setHasChanges(true);
       },
     [form],
   );
@@ -1506,6 +1509,7 @@ export function SettingsPage() {
       // Save to localStorage
       saveStorage(form);
       showToast('success', '設定を更新・確認しました');
+      setHasChanges(false);
     } catch {
       showToast('error', '保存に失敗しました');
     } finally {
@@ -1523,13 +1527,14 @@ export function SettingsPage() {
     setForm(cleared);
     setValidation(computeValidation(cleared));
     setConnStatus({ supabase: 'idle', azure: 'idle', gemini: 'idle' });
+    setHasChanges(false);
   }, []);
 
   const hasAnyValue = !allEmpty(form);
   const isSaveDisabled = isSaving || !hasValidPair(form, validation);
 
   return (
-    <div className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-lg p-4" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-lg p-4" style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '100px' }}>
 
       {/* ── Toast ── */}
       {toast && <Toast type={toast.type} message={toast.message} visible={toastVisible} />}
@@ -2009,34 +2014,62 @@ export function SettingsPage() {
         </p>
       </motion.div>
 
-      {/* ═══ Save Button ═══ */}
+      {/* ═══ Save Button (Sticky) ═══ */}
       <motion.button
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.20, duration: 0.24 }}
-        whileHover={!isSaveDisabled ? { scale: 1.01, boxShadow: '0 8px 28px rgba(6,182,212,0.40)' } : {}}
+        whileHover={!isSaveDisabled ? { scale: 1.01, boxShadow: hasChanges ? '0 12px 36px rgba(16,185,129,0.48)' : '0 8px 28px rgba(6,182,212,0.40)' } : {}}
         whileTap={!isSaveDisabled ? { scale: 0.97 } : {}}
         onClick={handleSave}
         disabled={isSaveDisabled}
         style={{
+          position: 'sticky',
+          bottom: 0,
           width: '100%',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           padding: '13px 16px',
-          background: !isSaveDisabled
+          background: hasChanges && !isSaveDisabled
+            ? 'linear-gradient(135deg, #10b981 0%, #059669 60%, #047857 100%)'
+            : !isSaveDisabled
             ? 'linear-gradient(135deg, #2563eb 0%, #0ea5e9 60%, #06b6d4 100%)'
             : 'rgba(255,255,255,0.05)',
-          border: !isSaveDisabled
+          border: hasChanges && !isSaveDisabled
+            ? '1px solid rgba(16,185,129,0.55)'
+            : !isSaveDisabled
             ? '1px solid rgba(6,182,212,0.45)'
             : '1px solid rgba(255,255,255,0.08)',
           borderRadius: '14px',
           color: !isSaveDisabled ? '#ffffff' : 'rgba(255,255,255,0.25)',
           fontSize: '14px', fontWeight: 700,
           cursor: isSaveDisabled ? 'not-allowed' : 'pointer',
-          boxShadow: !isSaveDisabled ? '0 4px 20px rgba(6,182,212,0.28)' : 'none',
-          transition: 'all 0.2s ease',
-          opacity: isSaveDisabled ? 0.6 : 1,
+          boxShadow: hasChanges && !isSaveDisabled
+            ? '0 8px 28px rgba(16,185,129,0.36)'
+            : !isSaveDisabled
+            ? '0 4px 20px rgba(6,182,212,0.28)'
+            : 'none',
+          backdropFilter: 'blur(8px)',
+          backgroundColor: hasChanges && !isSaveDisabled
+            ? 'rgba(16,185,129,0.92)'
+            : !isSaveDisabled
+            ? 'rgba(37,99,235,0.90)'
+            : 'rgba(255,255,255,0.05)',
+          transition: 'all 0.25s ease',
+          opacity: isSaveDisabled ? 0.5 : 1,
+          zIndex: 40,
+          marginBottom: '0px',
+          marginTop: '12px',
         }}
       >
+        <motion.div
+          animate={hasChanges ? { scale: [1, 1.1, 1], opacity: [0.6, 1, 0.6] } : { scale: 1, opacity: 1 }}
+          transition={hasChanges ? { duration: 2, repeat: Infinity } : undefined}
+          style={{
+            width: '8px', height: '8px', borderRadius: '50%',
+            background: hasChanges ? '#86efac' : 'currentColor',
+            flexShrink: 0,
+          }}
+        />
         {isSaving ? (
           <>
             <motion.div
@@ -2047,13 +2080,21 @@ export function SettingsPage() {
             </motion.div>
             確認中...
           </>
-        ) : (
+        ) : hasChanges ? (
           <>
             <Save style={{ width: '15px', height: '15px' }} />
+            変更を保存
+          </>
+        ) : (
+          <>
+            <CheckCircle style={{ width: '15px', height: '15px' }} />
             全設定を保存・確認
           </>
         )}
       </motion.button>
+
+      {/* ── Spacer for content below button ── */}
+      <div style={{ height: '20px' }} />
 
       {/* ═══ Guide Buttons ═══ */}
       <motion.div
