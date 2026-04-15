@@ -350,6 +350,8 @@ class AuthSessionManager {
    */
   public async registerPIN(pin: string): Promise<boolean> {
     try {
+      console.log('[AuthSession] Starting PIN registration...');
+
       // Import crypto functions
       const { validatePINStrength, wrapMasterKey, deriveWrappingKeyFromPIN } =
         await import('./crypto');
@@ -357,39 +359,77 @@ class AuthSessionManager {
       // Step 1: Validate PIN strength
       const validation = validatePINStrength(pin);
       if (!validation.valid) {
+        console.error('[AuthSession] PIN validation failed:', validation.message);
         throw new Error(validation.message);
       }
+      console.log('[AuthSession] PIN validation passed');
 
       // Step 2: Get current master key from memory
       const masterKey = this.masterKeyInstance;
       if (!masterKey) {
-        throw new Error('Master key not available in memory');
+        console.error('[AuthSession] Master key not available in memory');
+        throw new Error('Master key not available in memory. Please authenticate first.');
       }
+      console.log('[AuthSession] Master key found in memory');
 
       // Step 3: Export master key to Base64
       const { exportKeyAsBase64 } = await import('./crypto');
-      const masterKeyB64 = await exportKeyAsBase64(masterKey);
+      let masterKeyB64: string;
+      try {
+        masterKeyB64 = await exportKeyAsBase64(masterKey);
+        console.log('[AuthSession] Master key exported to Base64');
+      } catch (error) {
+        console.error('[AuthSession] Failed to export master key:', error);
+        throw new Error('Failed to export master key for wrapping');
+      }
 
-      // Step 4: Get encryption salt
-      const encryptionSalt = localStorage.getItem('encryption_salt');
+      // Step 4: Get or create encryption salt
+      let encryptionSalt = localStorage.getItem('encryption_salt');
       if (!encryptionSalt) {
-        throw new Error('Encryption salt not found');
+        console.log('[AuthSession] Encryption salt not found, generating new one');
+        // Generate a new salt (UUID-like string)
+        encryptionSalt = `salt_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        localStorage.setItem('encryption_salt', encryptionSalt);
+        console.log('[AuthSession] New encryption salt created and saved');
+      } else {
+        console.log('[AuthSession] Using existing encryption salt');
       }
 
       // Step 5: Derive wrapping key from PIN
-      const wrappingKey = await deriveWrappingKeyFromPIN(pin, encryptionSalt);
+      let wrappingKey: CryptoKey;
+      try {
+        wrappingKey = await deriveWrappingKeyFromPIN(pin, encryptionSalt);
+        console.log('[AuthSession] Wrapping key derived from PIN');
+      } catch (error) {
+        console.error('[AuthSession] Failed to derive wrapping key:', error);
+        throw new Error('Failed to derive wrapping key from PIN');
+      }
 
       // Step 6: Wrap master key
-      const wrappedKeyB64 = await wrapMasterKey(masterKeyB64, wrappingKey);
+      let wrappedKeyB64: string;
+      try {
+        wrappedKeyB64 = await wrapMasterKey(masterKeyB64, wrappingKey);
+        console.log('[AuthSession] Master key wrapped successfully');
+      } catch (error) {
+        console.error('[AuthSession] Failed to wrap master key:', error);
+        throw new Error('Failed to wrap master key with PIN');
+      }
 
       // Step 7: Save wrapped key to localStorage
-      localStorage.setItem('encryption_key_wrapped_b64', wrappedKeyB64);
-      localStorage.setItem('pin_enabled', 'true');
+      try {
+        localStorage.setItem('encryption_key_wrapped_b64', wrappedKeyB64);
+        localStorage.setItem('pin_enabled', 'true');
+        console.log('[AuthSession] Wrapped key saved to localStorage');
+        console.log('[AuthSession] PIN registered successfully');
+      } catch (error) {
+        console.error('[AuthSession] Failed to save wrapped key to localStorage:', error);
+        throw new Error('Failed to save wrapped key to storage');
+      }
 
-      console.log('[AuthSession] PIN registered successfully');
       return true;
     } catch (error) {
-      console.error('[AuthSession] PIN registration failed:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[AuthSession] PIN registration failed:', errorMsg);
       return false;
     }
   }

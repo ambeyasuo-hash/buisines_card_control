@@ -121,11 +121,14 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
       setIsRegistering(true);
       setRegistrationStatus({ type: null, message: '' });
 
-      // Ensure encryption key is created
+      // Step 1: Ensure encryption key is created and master key is in memory
       const { key } = await getOrCreateEncryptionKey();
-
-      // Register PIN
       const manager = getSessionManager();
+
+      // Step 2: Set master key to memory BEFORE calling registerPIN
+      manager.setMasterKey(key);
+
+      // Step 3: Register PIN (this requires master key to be in memory)
       const success = await manager.registerPIN(pin);
 
       if (!success) {
@@ -135,9 +138,6 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
         });
         return;
       }
-
-      // Unlock session after successful registration
-      manager.setMasterKey(key);
 
       setPinEnabled(true);
       setPin('');

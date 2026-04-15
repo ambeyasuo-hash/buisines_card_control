@@ -123,46 +123,67 @@ export async function deriveWrappingKeyFromPIN(
   pin: string,
   salt: string
 ): Promise<CryptoKey> {
-  // Input validation
-  if (!/^\d{4,8}$/.test(pin)) {
-    throw new Error('PIN は4～8桁の数字である必要があります');
+  try {
+    console.log('[Crypto] Deriving wrapping key from PIN...');
+
+    // Input validation
+    if (!/^\d{4,8}$/.test(pin)) {
+      console.error('[Crypto] PIN validation failed: invalid format');
+      throw new Error('PIN は4～8桁の数字である必要があります');
+    }
+    if (!salt || salt.length < 16) {
+      console.error('[Crypto] Salt validation failed: invalid salt');
+      throw new Error('Invalid salt: must be at least 16 characters');
+    }
+
+    console.log('[Crypto] Inputs validated. Encoding PIN and salt...');
+
+    // PIN + salt を Uint8Array に変換
+    const pinEncoded = new TextEncoder().encode(pin);
+    const saltEncoded = new TextEncoder().encode(salt);
+
+    console.log(`[Crypto] PIN encoded: ${pinEncoded.length} bytes, Salt encoded: ${saltEncoded.length} bytes`);
+
+    // PBKDF2-SHA256 で wrapping key を導出
+    console.log('[Crypto] Importing PIN as key material...');
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      pinEncoded,
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    console.log('[Crypto] Deriving bits using PBKDF2-SHA256 (100,000 iterations)...');
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: saltEncoded,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256 // 256-bit key for AES-256
+    );
+
+    console.log(`[Crypto] Derived bits: ${derivedBits.byteLength} bytes`);
+
+    // Derived bits を CryptoKey に変換
+    console.log('[Crypto] Converting derived bits to AES-256-GCM key...');
+    const wrappingKey = await crypto.subtle.importKey(
+      'raw',
+      derivedBits,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+    );
+
+    console.log('[Crypto] Wrapping key derived successfully');
+    return wrappingKey;
+  } catch (error) {
+    console.error('[Crypto] deriveWrappingKeyFromPIN failed:', error);
+    throw error;
   }
-  if (!salt || salt.length < 16) {
-    throw new Error('Invalid salt');
-  }
-
-  // PIN + salt を Uint8Array に変換
-  const pinEncoded = new TextEncoder().encode(pin);
-  const saltEncoded = new TextEncoder().encode(salt);
-
-  // PBKDF2-SHA256 で wrapping key を導出
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    pinEncoded,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
-
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltEncoded,
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    256 // 256-bit key for AES-256
-  );
-
-  // Derived bits を CryptoKey に変換
-  return crypto.subtle.importKey(
-    'raw',
-    derivedBits,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
-  );
 }
 
 /**
@@ -177,27 +198,59 @@ export async function wrapMasterKey(
   masterKeyB64: string,
   wrappingKey: CryptoKey
 ): Promise<string> {
-  // Decode master key from Base64
-  const masterKeyBytes = Uint8Array.from(
-    atob(masterKeyB64),
-    (c) => c.charCodeAt(0)
-  );
+  try {
+    // Validate inputs
+    if (!masterKeyB64 || typeof masterKeyB64 !== 'string') {
+      throw new Error('Invalid masterKeyB64: must be non-empty string');
+    }
+    if (!wrappingKey) {
+      throw new Error('Invalid wrappingKey: must be provided');
+    }
 
-  // Generate random 12-byte IV
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+    console.log('[Crypto] Decoding master key from Base64...');
+    // Decode master key from Base64
+    let masterKeyBytes: Uint8Array;
+    try {
+      masterKeyBytes = Uint8Array.from(
+        atob(masterKeyB64),
+        (c) => c.charCodeAt(0)
+      );
+      console.log(`[Crypto] Master key decoded: ${masterKeyBytes.length} bytes`);
+    } catch (error) {
+      throw new Error(`Failed to decode Base64 master key: ${(error as Error).message}`);
+    }
 
-  // Encrypt with AES-256-GCM
-  const encryptedData = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    wrappingKey,
-    masterKeyBytes
-  );
+    // Generate random 12-byte IV
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    console.log('[Crypto] IV generated (12 bytes)');
 
-  // Return as version-prefixed Base64
-  const ivB64 = btoa(String.fromCharCode(...iv));
-  const ciphertextB64 = btoa(String.fromCharCode(...new Uint8Array(encryptedData)));
+    // Encrypt with AES-256-GCM
+    console.log('[Crypto] Encrypting master key with AES-256-GCM...');
+    let encryptedData: ArrayBuffer;
+    try {
+      encryptedData = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        wrappingKey,
+        masterKeyBytes
+      );
+      console.log(`[Crypto] Encryption successful: ${encryptedData.byteLength} bytes`);
+    } catch (error) {
+      throw new Error(`AES-256-GCM encryption failed: ${(error as Error).message}`);
+    }
 
-  return `v1:${ivB64}:${ciphertextB64}`;
+    // Return as version-prefixed Base64
+    console.log('[Crypto] Encoding encrypted data to Base64...');
+    const ivB64 = btoa(String.fromCharCode(...iv));
+    const ciphertextB64 = btoa(String.fromCharCode(...new Uint8Array(encryptedData)));
+
+    const result = `v1:${ivB64}:${ciphertextB64}`;
+    console.log(`[Crypto] Wrapped key created: ${result.length} characters`);
+
+    return result;
+  } catch (error) {
+    console.error('[Crypto] wrapMasterKey failed:', error);
+    throw error;
+  }
 }
 
 /**
