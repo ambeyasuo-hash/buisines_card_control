@@ -1,41 +1,28 @@
 'use client';
 
 /**
- * EditCapturedCard — 名刺スキャン結果の確認・編集画面
+ * Edit Business Card Page — 既存名刺の編集・更新フロー
  *
  * フロー:
- *   1. ScanPage で OCR 完了後、このページへ遷移
- *   2. localStorage から OCR 結果を読み込み
- *   3. ユーザーが各項目を手動修正可能
- *   4. 位置情報・タグ・メモを追加
- *   5. 「保存」ボタン → Supabase に暗号化して保存
+ *   1. [id] から既存カードを読み込み
+ *   2. 復号データをフォーム入力欄に展開
+ *   3. ユーザー編集後、再暗号化して Supabase 更新
+ *   4. 詳細ページへ遷移
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Save, ChevronLeft, MapPin, Tag, FileText, AlertCircle, Loader,
-  X, Plus,
+  Save, AlertCircle, Loader, X, Plus, MapPin, Tag, FileText,
 } from 'lucide-react';
 import { BackButton } from '@/components/BackButton';
+import { createSupabaseClient, isSupabaseConfigured } from '@/lib/supabase-client';
+import { getOrCreateEncryptionKey, decryptData, encryptData } from '@/lib/crypto';
 import { getLocation, reverseGeocode, type LocationCoords } from '@/lib/geolocation';
-import { getOrCreateEncryptionKey, encryptData } from '@/lib/crypto';
 import { useFontSize } from '@/lib/font-size-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface OcrResult {
-  name?: string;
-  company?: string;
-  title?: string;
-  email?: string;
-  tel?: string;
-  address?: string;
-  raw?: string;
-  notes?: string;
-  error?: string;
-}
 
 interface EditState {
   name: string;
@@ -48,20 +35,22 @@ interface EditState {
   notes: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+type LoadState = 'loading' | 'success' | 'error' | 'not-found';
 
-const LS_TEMP = 'edit_capture_temp';
-const LS_TAGS = 'user_tags';
 const FONT_SIZE_SCALE: Record<string, number> = {
   medium: 1.0,
   large: 1.3,
   'extra-large': 1.6,
 };
 
+const LS_TAGS = 'user_tags';
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function EditCapturedCardPage() {
+export default function EditCardPage() {
   const router = useRouter();
+  const params = useParams();
+  const cardId = params?.id as string | undefined;
   const { fontSize: fontSizeType } = useFontSize();
   const fontScale = FONT_SIZE_SCALE[fontSizeType] ?? 1.0;
 
@@ -78,63 +67,88 @@ export default function EditCapturedCardPage() {
   });
 
   const [location, setLocation] = useState<LocationCoords | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [isSaving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
 
   // ── 初期化 ──────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const initPage = async () => {
-      const tempData = localStorage.getItem(LS_TEMP);
-      if (!tempData) {
-        router.push('/scan');
+  const initPage = useCallback(async () => {
+    if (!cardId) {
+      setLoadState('not-found');
+      return;
+    }
+
+    setLoadState('loading');
+
+    if (!isSupabaseConfigured()) {
+      setSaveError('Supabase が未設定です');
+      setLoadState('error');
+      return;
+    }
+
+    try {
+      const supabase = createSupabaseClient();
+
+      // ① ID でレコード取得
+      const { data, error } = await supabase
+        .from('business_cards')
+        .select('id, encrypted_data, encryption_key_id')
+        .eq('id', cardId)
+        .single();
+
+      if (error || !data) {
+        setLoadState('not-found');
         return;
       }
 
-      const ocrResult = JSON.parse(tempData) as OcrResult;
+      // ② 端末内で復号
+      const { key } = await getOrCreateEncryptionKey();
+      const plain = await decryptData<Record<string, any>>(
+        data.encrypted_data,
+        key,
+      );
+
       setEditState({
-        name: ocrResult.name ?? '',
-        company: ocrResult.company ?? '',
-        title: ocrResult.title ?? '',
-        email: ocrResult.email ?? '',
-        tel: ocrResult.tel ?? '',
-        address: ocrResult.address ?? '',
-        location_address: '',
-        notes: ocrResult.notes ?? '',
+        name: plain.name ?? '',
+        company: plain.company ?? '',
+        title: plain.title ?? '',
+        email: plain.email ?? '',
+        tel: plain.tel ?? '',
+        address: plain.address ?? '',
+        location_address: plain.location_address ?? '',
+        notes: plain.notes ?? '',
       });
+
+      if (plain.location_lat && plain.location_lng) {
+        setLocationLat(plain.location_lat);
+        setLocationLng(plain.location_lng);
+      }
+
+      if (plain.tags && Array.isArray(plain.tags)) {
+        setSelectedTags(plain.tags);
+      }
 
       const tagsData = localStorage.getItem(LS_TAGS);
       if (tagsData) {
         setAllTags(JSON.parse(tagsData) as string[]);
       }
 
-      try {
-        const loc = await getLocation();
-        if ('lat' in loc && 'lng' in loc) {
-          setLocation(loc);
+      setLoadState('success');
+    } catch (e) {
+      setSaveError(String(e));
+      setLoadState('error');
+    }
+  }, [cardId]);
 
-          // 逆ジオコーディングで住所を取得
-          const address = await reverseGeocode(loc.lat, loc.lng);
-          if (address) {
-            setEditState(prev => ({ ...prev, location_address: address }));
-          }
-        } else {
-          setLocationError(loc.message);
-        }
-      } catch (e) {
-        setLocationError('位置情報取得エラー');
-      }
-
-      setIsLoading(false);
-    };
-
+  useEffect(() => {
     initPage();
-  }, [router]);
+  }, [initPage]);
 
   // ── ハンドラー ────────────────────────────────────────────────────────
 
@@ -166,7 +180,7 @@ export default function EditCapturedCardPage() {
   }, [newTagInput, allTags]);
 
   const handleSave = useCallback(async () => {
-    if (isSaving) return;
+    if (isSaving || !cardId) return;
 
     setSaving(true);
     setSaveError(null);
@@ -193,8 +207,8 @@ export default function EditCapturedCardPage() {
         location_address: editState.location_address || null,
         notes: editState.notes || null,
         tags: selectedTags.length > 0 ? selectedTags : null,
-        location_lat: location?.lat ?? null,
-        location_lng: location?.lng ?? null,
+        location_lat: locationLat ?? null,
+        location_lng: locationLng ?? null,
       };
 
       const encryptedData = await encryptData(dataToEncrypt, key);
@@ -203,24 +217,23 @@ export default function EditCapturedCardPage() {
       if (editState.company) searchHashes.push(editState.company.toLowerCase().trim());
       if (editState.name) searchHashes.push(editState.name.toLowerCase().trim());
 
-      const res = await fetch('/api/save-business-card', {
+      const res = await fetch('/api/update-business-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          cardId,
           encrypted_data: encryptedData,
           encryption_key_id: 'v1',
           search_hashes: searchHashes.length > 0 ? searchHashes : undefined,
-          scanned_at: new Date().toISOString(),
           supabaseUrl,
           supabaseKey,
         }),
       });
 
-      const result = await res.json() as { ok: boolean; id?: string; error?: string };
+      const result = await res.json() as { ok: boolean; error?: string };
 
-      if (result.ok && result.id) {
-        localStorage.removeItem(LS_TEMP);
-        router.push('/?tab=list');
+      if (result.ok) {
+        router.push(`/cards/${cardId}`);
       } else {
         setSaveError(result.error ?? '保存に失敗しました。もう一度お試しください。');
       }
@@ -229,14 +242,15 @@ export default function EditCapturedCardPage() {
     } finally {
       setSaving(false);
     }
-  }, [editState, location, selectedTags, isSaving, router]);
+  }, [editState, selectedTags, locationLat, locationLng, isSaving, cardId, router]);
 
   const handleCancel = useCallback(() => {
-    localStorage.removeItem(LS_TEMP);
-    router.push('/scan');
-  }, [router]);
+    if (cardId) {
+      router.push(`/cards/${cardId}`);
+    }
+  }, [cardId, router]);
 
-  if (isLoading) {
+  if (loadState === 'loading') {
     return (
       <div style={{
         width: '100vw',
@@ -247,6 +261,43 @@ export default function EditCapturedCardPage() {
         backgroundColor: '#f8fafc',
       }}>
         <Loader size={32} className="animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (loadState === 'not-found') {
+    return (
+      <div style={{
+        width: '100%',
+        minHeight: '100vh',
+        backgroundColor: '#f8fafc',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: `${16 * fontScale}px`,
+      }}>
+        <h2 style={{
+          fontSize: `${18 * fontScale}px`,
+          fontWeight: 600,
+          color: '#1e293b',
+          marginBottom: `${12 * fontScale}px`,
+        }}>名刺が見つかりません</h2>
+        <button
+          onClick={() => router.push('/?tab=list')}
+          style={{
+            padding: `${12 * fontScale}px ${16 * fontScale}px`,
+            backgroundColor: '#0369a1',
+            color: 'white',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: `${14 * fontScale}px`,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          一覧へ戻る
+        </button>
       </div>
     );
   }
@@ -273,7 +324,7 @@ export default function EditCapturedCardPage() {
           fontWeight: 700,
           color: '#1e293b',
           margin: 0,
-        }}>名刺情報の確認</h1>
+        }}>名刺情報の編集</h1>
       </div>
 
       {/* メインコンテンツ */}
@@ -472,59 +523,7 @@ export default function EditCapturedCardPage() {
           </div>
         </motion.div>
 
-        {/* 位置情報表示 */}
-        {location && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{
-              backgroundColor: '#f0f9ff',
-              border: '1px solid #bfdbfe',
-              borderRadius: 12,
-              padding: `${12 * fontScale}px`,
-              marginBottom: `${16 * fontScale}px`,
-              display: 'flex',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
-            <MapPin size={20} style={{ color: '#0369a1', flexShrink: 0 }} />
-            <div>
-              <p style={{
-                fontSize: `${14 * fontScale}px`,
-                color: '#0c4a6e',
-                margin: 0,
-                fontWeight: 500,
-              }}>現在地</p>
-              <p style={{
-                fontSize: `${12 * fontScale}px`,
-                color: '#0369a1',
-                margin: `${4 * fontScale}px 0 0 0`,
-              }}>
-                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-              </p>
-            </div>
-          </motion.div>
-        )}
-        {locationError && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: 12,
-              padding: `${12 * fontScale}px`,
-              marginBottom: `${16 * fontScale}px`,
-              fontSize: `${12 * fontScale}px`,
-              color: '#991b1b',
-            }}
-          >
-            {locationError}
-          </motion.div>
-        )}
-
-        {/* 交換場所（位置情報から自動取得）*/}
+        {/* 交換場所（位置情報） */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -555,7 +554,7 @@ export default function EditCapturedCardPage() {
             marginBottom: `${8 * fontScale}px`,
             margin: 0,
           }}>
-            {location ? '位置情報から自動検出されました' : '位置情報が未取得です'}
+            {locationLat && locationLng ? `座標: ${locationLat.toFixed(4)}, ${locationLng.toFixed(4)}` : '位置情報が設定されていません'}
           </p>
           <input
             type="text"
@@ -708,7 +707,7 @@ export default function EditCapturedCardPage() {
             メモ
           </h3>
           <textarea
-            placeholder="この名刺に関する備考（例：○○会議で出会った、〇年後フォローアップ予定など）"
+            placeholder="この名刺に関する備考"
             value={editState.notes}
             onChange={(e) => handleFieldChange('notes', e.target.value)}
             style={{

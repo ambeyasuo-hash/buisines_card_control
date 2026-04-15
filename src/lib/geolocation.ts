@@ -64,6 +64,63 @@ export function getLocation(): Promise<LocationCoords | LocationError> {
 }
 
 /**
+ * 逆ジオコーディング：座標から住所を取得
+ * OpenStreetMap Nominatim API を使用
+ * オフライン・API制限時は gracefully フェイルする
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    // OpenStreetMap Nominatim — 無料、API キー不要
+    // 言語を日本語に設定し、住所フォーマットを指定
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&lang=ja`;
+
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    });
+
+    if (!response.ok) {
+      console.warn(`Nominatim API error: ${response.status}`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      address?: Record<string, string>;
+      error?: string;
+    };
+
+    if (data.error) {
+      console.warn('Nominatim API error:', data.error);
+      return null;
+    }
+
+    if (!data.address) {
+      console.warn('No address data returned from Nominatim');
+      return null;
+    }
+
+    const addr = data.address;
+
+    // 日本の住所フォーマット：都道府県 + 市区町村 + 町名
+    // Nominatim の address オブジェクトから必要な要素を抽出
+    const prefecture = addr.state || addr.province || '';
+    const city = addr.city || addr.town || addr.village || '';
+    const suburb = addr.suburb || addr.district || '';
+
+    const parts = [prefecture, city, suburb].filter(p => p && p.trim());
+    if (parts.length === 0) {
+      // フォールバック：緯度経度を返す
+      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+
+    return parts.join('');
+  } catch (error) {
+    // ネットワークエラー、CORS エラー等 → gracefully フェイル
+    console.warn('Reverse geocoding failed:', error);
+    return null;
+  }
+}
+
+/**
  * 座標から都道府県名を推定（簡易版）
  * 実装注：実際には Reverse Geocoding API が必要
  * ここではプレイスホルダー実装
