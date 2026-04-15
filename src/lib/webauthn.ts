@@ -143,10 +143,11 @@ export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult>
         { alg: -257, type: 'public-key' }, // RS256
       ],
       authenticatorSelection: {
-        // 削除: authenticatorAttachment
-        // クロスプラットフォーム（スマホ連携）を許容し、プラットフォーム認証も支持
+        // Platform authenticator 優先: デバイス内蔵の生体認証（FaceID/指紋）を使用
+        // クロスプラットフォーム（外部NFC等）は除外。将来的な拡張は明示的なボタンで対応
+        authenticatorAttachment: 'platform',
         userVerification: 'preferred',
-        residentKey: 'discouraged',
+        residentKey: 'preferred', // ユーザー選択の手間を最小化
       },
       attestation: 'none', // プライバシー保護のため attestation 不要
       timeout: 60000,
@@ -235,7 +236,8 @@ export async function assertWebAuthnCredential(): Promise<WebAuthnAssertionResul
         {
           type: 'public-key',
           id: credentialIdBytes,
-          transports: ['internal', 'usb', 'nfc', 'ble'], // クロスプラットフォーム対応
+          transports: ['internal'], // Platform authenticator のみ: FaceID/指紋認証
+          // NOTE: クロスプラットフォーム（NFC等）は将来の拡張機能として明示的なボタンで実装
         }
       ];
     } catch (error) {

@@ -70,17 +70,52 @@ export function LockScreen({
     setLocalError(null);
     setWebAuthnFailed(false);
 
-    const success = await onAuthenticateWebAuthn();
-    if (!success) {
+    try {
+      const success = await onAuthenticateWebAuthn();
+      if (!success) {
+        setWebAuthnFailed(true);
+
+        // WebAuthn 失敗時：PIN への自動切り替えを提案（supportsPIN が有効な場合）
+        if (supportsPIN) {
+          setLocalError('生体認証に失敗しました。PIN での認証をお試しください。');
+          setMode('pin');
+          setPin('');
+        } else {
+          setLocalError('認証に失敗しました。もう一度お試しください。');
+        }
+      }
+    } catch (error) {
+      // WebAuthn エラーを詳細に判定
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       setWebAuthnFailed(true);
 
-      // WebAuthn 失敗時：PIN への自動切り替えを提案（supportsPIN が有効な場合）
-      if (supportsPIN) {
-        setLocalError('生体認証に失敗しました。PIN での認証をお試しください。');
-        setMode('pin');
-        setPin('');
+      // NotAllowedError（ユーザーがキャンセル）または TimeoutError の場合
+      if (errorMessage.includes('NotAllowedError') || errorMessage.includes('NotAllowed')) {
+        if (supportsPIN) {
+          setLocalError('生体認証がキャンセルされました。PIN での認証をお試しください。');
+          setMode('pin');
+          setPin('');
+        } else {
+          setLocalError('生体認証がキャンセルされました。');
+        }
+      } else if (errorMessage.includes('TimeoutError') || errorMessage.includes('Timeout')) {
+        if (supportsPIN) {
+          setLocalError('生体認証がタイムアウトしました。PIN での認証をお試しください。');
+          setMode('pin');
+          setPin('');
+        } else {
+          setLocalError('生体認証がタイムアウトしました。');
+        }
       } else {
-        setLocalError('認証に失敗しました。もう一度お試しください。');
+        // その他のエラー
+        if (supportsPIN) {
+          setLocalError('生体認証に失敗しました。PIN での認証をお試しください。');
+          setMode('pin');
+          setPin('');
+        } else {
+          setLocalError('認証に失敗しました。もう一度お試しください。');
+        }
       }
     }
   };
@@ -246,11 +281,11 @@ export function LockScreen({
                   setPin('');
                   setWebAuthnFailed(false);
                 }}
-                className="text-sm text-muted-foreground hover:text-foreground
-                           flex items-center gap-1 underline transition-colors duration-200"
+                className="text-sm text-blue-400 hover:text-blue-300
+                           flex items-center gap-2 underline transition-colors duration-200"
               >
-                <Keyboard className="w-3 h-3" />
-                PIN を使用
+                <Keyboard className="w-4 h-4" />
+                生体認証が使えませんか？ PIN でログイン
               </button>
             )}
           </>
@@ -302,17 +337,19 @@ export function LockScreen({
               {isAuthenticating ? '認証中...' : '認証'}
             </motion.button>
 
-            <button
-              onClick={() => {
-                setMode('webauthn');
-                setLocalError(null);
-                setPin('');
-              }}
-              className="text-sm text-muted-foreground hover:text-foreground
-                         underline transition-colors duration-200"
-            >
-              ← 戻る
-            </button>
+            {supportsWebAuthn && webAuthnEnabled && (
+              <button
+                onClick={() => {
+                  setMode('webauthn');
+                  setLocalError(null);
+                  setPin('');
+                }}
+                className="text-sm text-muted-foreground hover:text-foreground
+                           flex items-center gap-2 underline transition-colors duration-200"
+              >
+                ← 生体認証に戻る
+              </button>
+            )}
           </>
         )}
 
