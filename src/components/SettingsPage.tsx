@@ -82,29 +82,80 @@ const API_CONFIG = {
   },
 };
 
+// ─── Sanitization Functions ───────────────────────────────────────────────────
+/**
+ * Sanitize URL endpoint: trim, remove trailing slash, handle encoding
+ */
+function sanitizeUrl(url: string): string {
+  return url
+    .trim()                          // Remove leading/trailing whitespace
+    .replace(/\s+/g, '')            // Remove all internal whitespace (tabs, newlines)
+    .replace(/\/+$/, '')            // Remove trailing slashes
+    .toLowerCase();                 // Normalize to lowercase
+}
+
+/**
+ * Sanitize API key: trim, remove whitespace
+ */
+function sanitizeKey(key: string): string {
+  return key
+    .trim()                         // Remove leading/trailing whitespace
+    .replace(/\s+/g, '');           // Remove all internal whitespace
+}
+
+/**
+ * Validate URL format using URL constructor
+ */
+function isValidUrl(urlString: string): boolean {
+  try {
+    new URL(urlString);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Validation Functions ─────────────────────────────────────────────────────
 function validateSupabaseUrl(url: string): boolean {
-  return url.trim().startsWith('https://') && url.includes('.supabase.co');
+  const sanitized = sanitizeUrl(url);
+  return sanitized.startsWith('https://') &&
+         sanitized.includes('.supabase.co') &&
+         isValidUrl(sanitized);
 }
 
 function validateSupabaseKey(key: string): boolean {
-  return key.startsWith('eyJ') && key.length > 150;
+  const sanitized = sanitizeKey(key);
+  return sanitized.startsWith('eyJ') && sanitized.length > 150;
 }
 
 function validateAzureEndpoint(endpoint: string): boolean {
-  const trimmed = endpoint.trim();
-  // Accept both formrecognizer and cognitiveservices endpoints
-  return (
-    trimmed.startsWith('https://') &&
-    (trimmed.includes('.cognitiveservices.azure.com') || trimmed.includes('api.cognitive.microsoft.com'))
-  );
+  const sanitized = sanitizeUrl(endpoint);
+
+  // Must start with https://
+  if (!sanitized.startsWith('https://')) {
+    return false;
+  }
+
+  // Must be valid URL
+  if (!isValidUrl(sanitized)) {
+    return false;
+  }
+
+  // Must include Azure domain
+  const isAzureDomain =
+    sanitized.includes('.cognitiveservices.azure.com') ||
+    sanitized.includes('api.cognitive.microsoft.com');
+
+  if (!isAzureDomain) {
+    return false;
+  }
+
+  return true;
 }
 
 function validateAzureKey(key: string): boolean {
-  // Azure keys are Base64 strings, typically 32+ characters
-  // Allow alphanumeric + Base64 special chars (=, +, /)
-  // More lenient: accept 20+ chars to allow for different key formats
-  return key.trim().length >= 20;
+  const sanitized = sanitizeKey(key);
+  return sanitized.length >= 20;
 }
 
 function validateGeminiKey(key: string): boolean {
@@ -147,13 +198,13 @@ function loadStorage(): FormState {
 
 function saveStorage(f: FormState) {
   Object.entries({
-    [LS.supabaseUrl]:     f.supabaseUrl.trim(),
-    [LS.supabaseAnonKey]: f.supabaseAnonKey.trim(),
-    [LS.azureEndpoint]:   f.azureEndpoint.trim(),
-    [LS.azureKey]:        f.azureKey.trim(),
+    [LS.supabaseUrl]:     sanitizeUrl(f.supabaseUrl),
+    [LS.supabaseAnonKey]: sanitizeKey(f.supabaseAnonKey),
+    [LS.azureEndpoint]:   sanitizeUrl(f.azureEndpoint),
+    [LS.azureKey]:        sanitizeKey(f.azureKey),
     [LS.azureRegion]:     f.azureRegion.trim(),
-    [LS.geminiKey]:       f.geminiKey.trim(),
-    [LS.userEmail]:       f.userEmail.trim(),
+    [LS.geminiKey]:       sanitizeKey(f.geminiKey),
+    [LS.userEmail]:       f.userEmail.trim().toLowerCase(),
   }).forEach(([k, v]) => {
     if (v) localStorage.setItem(k, v);
     else localStorage.removeItem(k);
@@ -1507,17 +1558,50 @@ export function SettingsPage() {
       return;
     }
 
+    // ─── Additional Azure endpoint validation ──────────────────────────────────
+    if (form.azureEndpoint.trim()) {
+      if (!validateAzureEndpoint(form.azureEndpoint)) {
+        showToast('error', 'Azure エンドポイントの URL 形式が正しくありません。\n\n形式例:\nhttps://japaneast.api.cognitive.microsoft.com\nまたは\nhttps://myresource.cognitiveservices.azure.com');
+        return;
+      }
+      if (!form.azureKey.trim()) {
+        showToast('error', 'Azure エンドポイントを入力した場合、API キーも入力してください');
+        return;
+      }
+    }
+
+    if (form.azureKey.trim() && !form.azureEndpoint.trim()) {
+      showToast('error', 'Azure API キーを入力した場合、エンドポイントも入力してください');
+      return;
+    }
+
+    // ─── Additional Supabase validation ────────────────────────────────────────
+    if (form.supabaseUrl.trim() && !isValidUrl(sanitizeUrl(form.supabaseUrl))) {
+      showToast('error', 'Supabase URL が有効な URL 形式ではありません');
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Run connection checks
       await checkConnection();
 
-      // Save to localStorage
+      // Save to localStorage (with automatic sanitization)
       saveStorage(form);
       showToast('success', '設定を更新・確認しました');
       setHasChanges(false);
-    } catch {
-      showToast('error', '保存に失敗しました');
+    } catch (err) {
+      const error = err as Error;
+      // Provide more helpful error messages
+      if (error.message.includes('pattern')) {
+        showToast('error', 'エンドポイント URL またはキーの形式を確認してください');
+      } else if (error.message.includes('401') || error.message.includes('403')) {
+        showToast('error', 'API キーが無効です。キーを再確認してください');
+      } else if (error.message.includes('404')) {
+        showToast('error', 'エンドポイントが見つかりません。URL を確認してください');
+      } else {
+        showToast('error', '保存に失敗しました: ' + error.message);
+      }
     } finally {
       setIsSaving(false);
     }

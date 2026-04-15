@@ -97,16 +97,28 @@ export async function POST(request: Request): Promise<Response> {
     // ─── Test connection ─────────────────────────────────────────────────────
 
     // Build test URL using both possible API paths
-    const testUrls = [
-      `${endpoint}/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31&locale=ja-JP`,
-      `${endpoint}/documentintelligence/document-models/prebuilt-businessCard:analyze?api-version=2023-10-31-preview&locale=ja-JP`,
-    ];
-
     let lastError: Error | null = null;
     let lastStatus = 0;
 
-    for (const testUrl of testUrls) {
+    for (const pathSuffix of [
+      '/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31&locale=ja-JP',
+      '/documentintelligence/document-models/prebuilt-businessCard:analyze?api-version=2023-10-31-preview&locale=ja-JP',
+    ]) {
       try {
+        // Build test URL properly using URL object to avoid double slashes
+        const baseUrl = endpoint.replace(/\/+$/, ''); // Remove trailing slashes
+        const testUrl = new URL(baseUrl);
+        testUrl.pathname = (testUrl.pathname.replace(/\/+$/, '') || '') + pathSuffix.split('?')[0];
+
+        // Add query parameters properly
+        const params = pathSuffix.split('?')[1];
+        if (params) {
+          params.split('&').forEach(pair => {
+            const [key, value] = pair.split('=');
+            testUrl.searchParams.set(key, value);
+          });
+        }
+
         // Create a minimal test payload (empty JPEG header)
         const minimalImage = Buffer.from([
           0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
@@ -223,28 +235,38 @@ export async function POST(request: Request): Promise<Response> {
     );
   } catch (err) {
     const error = err as Error;
-    if (error.message.includes('Invalid URL')) {
+    const errorMsg = error.message.toLowerCase();
+
+    // Handle "The string did not match the expected pattern" error
+    if (errorMsg.includes('pattern') || errorMsg.includes('invalid') || errorMsg.includes('not match')) {
       return Response.json(
         {
           ok: false,
-          message: 'エンドポイント URL の形式が不正です',
+          message:
+            'エンドポイント URL の形式が正しくありません。\n\n' +
+            '✓ 正しい形式:\n' +
+            '  https://japaneast.api.cognitive.microsoft.com\n' +
+            '  https://myresource.cognitiveservices.azure.com\n\n' +
+            '✗ よくある間違い:\n' +
+            '  • スペースやタブが含まれている\n' +
+            '  • https:// が含まれていない\n' +
+            '  • URL末尾に余分なスラッシュがある\n' +
+            '  • 小文字以外が含まれている',
           code: 'INVALID_URL_FORMAT',
         } as TestResponse,
         { status: 200 }
       );
     }
 
-    if (error.message.includes('did not match the expected pattern')) {
+    if (errorMsg.includes('invalid url')) {
       return Response.json(
         {
           ok: false,
           message:
-            'エンドポイント URL またはキーの形式が Azure の要件と一致していません\n\n' +
-            'エンドポイント形式例:\n' +
-            'https://japaneast.api.cognitive.microsoft.com\n' +
-            'または\n' +
-            'https://myresourcename.cognitiveservices.azure.com',
-          code: 'PATTERN_MISMATCH',
+            'エンドポイント URL の形式が不正です。\n\n' +
+            'https:// で始まり、有効なホスト名を含む必要があります。\n' +
+            '例: https://japaneast.api.cognitive.microsoft.com',
+          code: 'INVALID_URL_FORMAT',
         } as TestResponse,
         { status: 200 }
       );
@@ -253,8 +275,13 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(
       {
         ok: false,
-        message: `エラー: ${error.message}`,
-        code: 'UNKNOWN_ERROR',
+        message:
+          'エンドポイント URL またはキーが正しくありません。\n\n' +
+          '以下を確認してください:\n' +
+          '• URL は https:// で始まっている\n' +
+          '• .cognitiveservices.azure.com または api.cognitive.microsoft.com を含む\n' +
+          '• API キーは 20 文字以上',
+        code: 'VALIDATION_ERROR',
       } as TestResponse,
       { status: 200 }
     );
