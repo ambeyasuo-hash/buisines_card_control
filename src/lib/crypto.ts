@@ -336,6 +336,23 @@ export async function deriveWrappingKeyFromAssertion(
 }
 
 /**
+ * 24単語（BIP-39 mnemonic）からマスターキー（CryptoKey）を決定論的に復元
+ *
+ * Zero-Knowledge: 派生はクライアントのみで実行、サーバーへの送信禁止
+ * チェックサム検証は mnemonicToKeyB64 内部の validateMnemonic が担当
+ *
+ * @param mnemonic スペース区切りの24単語
+ * @returns AES-256-GCM CryptoKey (extractable=true, encrypt/decrypt)
+ * @throws シードフレーズが不正な場合
+ */
+export async function deriveMasterKeyFromMnemonic(mnemonic: string): Promise<CryptoKey> {
+  // Dynamic import to avoid top-level circular deps; mnemonic.ts → @scure/bip39 only
+  const { mnemonicToKeyB64 } = await import('./mnemonic');
+  const keyB64 = mnemonicToKeyB64(mnemonic); // チェックサム検証 + エントロピー抽出
+  return importKeyFromBase64(keyB64);
+}
+
+/**
  * PIN の強度チェック（UI用）
  * LockScreen から PIN pad に入力中にリアルタイムで呼び出し
  *

@@ -10,13 +10,14 @@
  *   - PIN 登録フロー（代替）
  *   - 設定状態の表示
  *   - Wrapped master key の生成・保存
+ *   - [Phase 7] 初回セットアップ時に24単語バックアップフレーズを表示・確認
  */
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Shield, Smartphone, Lock, CheckCircle, AlertCircle, AlertTriangle,
-  Loader, Eye, EyeOff, Copy, Check, Zap,
+  Loader, Eye, EyeOff, Copy, Check, Zap, FileText, ChevronRight,
 } from 'lucide-react';
 import {
   registerWebAuthnCredential,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/webauthn';
 import { getSessionManager } from '@/lib/auth-session';
 import { getOrCreateEncryptionKey, validatePINStrength } from '@/lib/crypto';
+import { keyB64ToMnemonic } from '@/lib/mnemonic';
 
 interface SecuritySetupProps {
   onComplete?: () => void;
@@ -45,48 +47,79 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
     message: string;
   }>({ type: null, message: '' });
 
-  // Check security configuration on mount
-  useEffect(() => {
-    const supported = isWebAuthnSupported();
-    const enabled = isWebAuthnEnabled();
-    const pinSet = localStorage.getItem('pin_enabled') === 'true';
+  // ── Backup Phrase Step ─────────────────────────────────────────────────────
+  const [backupStep, setBackupStep] = useState<'loading' | 'show-phrase' | 'confirmed'>('loading');
+  const [mnemonicWords, setMnemonicWords] = useState<string[]>([]);
+  const [confirmedBackup, setConfirmedBackup] = useState(false);
+  const [showMnemonicWords, setShowMnemonicWords] = useState(false);
+  const [copiedMnemonic, setCopiedMnemonic] = useState(false);
 
-    setWebAuthnReady(supported);
-    setWebAuthnEnabled(enabled);
-    setPinEnabled(pinSet);
+  // Initialize: check if backup phrase needs to be shown
+  useEffect(() => {
+    const init = async () => {
+      const supported = isWebAuthnSupported();
+      const enabled = isWebAuthnEnabled();
+      const pinSet = localStorage.getItem('pin_enabled') === 'true';
+
+      setWebAuthnReady(supported);
+      setWebAuthnEnabled(enabled);
+      setPinEnabled(pinSet);
+
+      const alreadyBackedUp = localStorage.getItem('mnemonic_backed_up') === 'true';
+      if (alreadyBackedUp) {
+        setBackupStep('confirmed');
+        return;
+      }
+
+      // Generate/get key and compute mnemonic for display
+      try {
+        const { keyB64 } = await getOrCreateEncryptionKey();
+        const mnemonic = keyB64ToMnemonic(keyB64);
+        setMnemonicWords(mnemonic.split(' '));
+        setBackupStep('show-phrase');
+      } catch (err) {
+        console.error('[SecuritySetup] Failed to generate mnemonic:', err);
+        setBackupStep('confirmed'); // Non-blocking: skip on error
+      }
+    };
+    init();
   }, []);
 
-  // WebAuthn registration handler
+  const handleConfirmBackup = () => {
+    localStorage.setItem('mnemonic_backed_up', 'true');
+    setBackupStep('confirmed');
+  };
+
+  const handleCopyMnemonic = async () => {
+    try {
+      await navigator.clipboard.writeText(mnemonicWords.join(' '));
+      setCopiedMnemonic(true);
+      setTimeout(() => setCopiedMnemonic(false), 2000);
+    } catch {
+      // Clipboard not available (PWA security context)
+    }
+  };
+
+  // ── WebAuthn registration handler ──────────────────────────────────────────
   const handleWebAuthnRegister = async () => {
     try {
       setIsRegistering(true);
       setRegistrationStatus({ type: null, message: '' });
 
-      // Ensure encryption key is created
       const { key } = await getOrCreateEncryptionKey();
-
-      // Register WebAuthn credential
       const result = await registerWebAuthnCredential();
 
       if (!result.success) {
-        setRegistrationStatus({
-          type: 'error',
-          message: result.message,
-        });
+        setRegistrationStatus({ type: 'error', message: result.message });
         return;
       }
 
-      // Unlock session after successful registration
       const manager = getSessionManager();
       manager.setMasterKey(key);
 
       setWebAuthnEnabled(true);
       setRegistrationMode(null);
-      setRegistrationStatus({
-        type: 'success',
-        message: '生体認証が登録されました！',
-      });
-
+      setRegistrationStatus({ type: 'success', message: '生体認証が登録されました！' });
       onComplete?.();
     } catch (error) {
       setRegistrationStatus({
@@ -98,44 +131,29 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
     }
   };
 
-  // PIN registration handler
+  // ── PIN registration handler ───────────────────────────────────────────────
   const handlePinRegister = async () => {
     try {
       const pinValidation = validatePINStrength(pin);
       if (!pinValidation.valid) {
-        setRegistrationStatus({
-          type: 'error',
-          message: pinValidation.message,
-        });
+        setRegistrationStatus({ type: 'error', message: pinValidation.message });
         return;
       }
-
       if (pin !== pinConfirm) {
-        setRegistrationStatus({
-          type: 'error',
-          message: 'PIN が一致しません',
-        });
+        setRegistrationStatus({ type: 'error', message: 'PIN が一致しません' });
         return;
       }
 
       setIsRegistering(true);
       setRegistrationStatus({ type: null, message: '' });
 
-      // Step 1: Ensure encryption key is created and master key is in memory
       const { key } = await getOrCreateEncryptionKey();
       const manager = getSessionManager();
-
-      // Step 2: Set master key to memory BEFORE calling registerPIN
       manager.setMasterKey(key);
 
-      // Step 3: Register PIN (this requires master key to be in memory)
       const success = await manager.registerPIN(pin);
-
       if (!success) {
-        setRegistrationStatus({
-          type: 'error',
-          message: 'PIN 登録に失敗しました',
-        });
+        setRegistrationStatus({ type: 'error', message: 'PIN 登録に失敗しました' });
         return;
       }
 
@@ -143,11 +161,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
       setPin('');
       setPinConfirm('');
       setRegistrationMode(null);
-      setRegistrationStatus({
-        type: 'success',
-        message: 'PIN が登録されました！',
-      });
-
+      setRegistrationStatus({ type: 'success', message: 'PIN が登録されました！' });
       onComplete?.();
     } catch (error) {
       setRegistrationStatus({
@@ -162,6 +176,157 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
   const pinValidation = validatePINStrength(pin);
   const canRegisterPin = pin.length >= 4 && pin === pinConfirm;
 
+  // ── Render: Loading ────────────────────────────────────────────────────────
+  if (backupStep === 'loading') {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="w-6 h-6 animate-spin text-blue-400" />
+      </div>
+    );
+  }
+
+  // ── Render: Backup Phrase Gate ─────────────────────────────────────────────
+  if (backupStep === 'show-phrase') {
+    return (
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5 text-amber-400" />
+          <div>
+            <h2 className="text-lg font-semibold text-white">リカバリフレーズを保存</h2>
+            <p className="text-xs text-white/50 mt-1">セキュリティ設定の前に必ず行ってください</p>
+          </div>
+        </div>
+
+        {/* Critical Warning */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-xl bg-red-500/10 border border-red-500/40 flex items-start gap-3"
+        >
+          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-red-300 space-y-1">
+            <p className="font-bold text-red-200">
+              ⚠ このフレーズを失うと、二度とデータにアクセスできません
+            </p>
+            <p>
+              キャッシュクリア・機種変更・アプリ削除の際、このフレーズのみがマスターキーを復元できます。
+              サーバーには一切保存されていません（Zero-Knowledge 原則）。
+            </p>
+          </div>
+        </motion.div>
+
+        {/* Mnemonic Display */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="p-4 rounded-xl bg-slate-800/60 border border-slate-600/40"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-white/70">24単語のリカバリフレーズ</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowMnemonicWords(!showMnemonicWords)}
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                {showMnemonicWords ? (
+                  <><EyeOff className="w-3.5 h-3.5" /> 隠す</>
+                ) : (
+                  <><Eye className="w-3.5 h-3.5" /> 表示</>
+                )}
+              </button>
+              <button
+                onClick={handleCopyMnemonic}
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                {copiedMnemonic ? (
+                  <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">コピー済み</span></>
+                ) : (
+                  <><Copy className="w-3.5 h-3.5" /> コピー</>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {showMnemonicWords ? (
+            <div className="grid grid-cols-4 gap-1.5">
+              {mnemonicWords.map((word, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40"
+                >
+                  <span className="text-[10px] text-white/30 w-4 flex-shrink-0">{i + 1}</span>
+                  <span className="text-xs font-mono text-white truncate">{word}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              onClick={() => setShowMnemonicWords(true)}
+              className="h-24 flex items-center justify-center rounded-lg bg-slate-700/40 border border-slate-600/30
+                         cursor-pointer hover:bg-slate-700/60 transition-colors"
+            >
+              <div className="text-center">
+                <Eye className="w-5 h-5 text-white/30 mx-auto mb-1" />
+                <p className="text-xs text-white/40">タップして表示</p>
+              </div>
+            </div>
+          )}
+        </motion.div>
+
+        {/* Confirmation Checkbox */}
+        <motion.label
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
+          className="flex items-start gap-3 cursor-pointer group"
+        >
+          <div className="relative mt-0.5">
+            <input
+              type="checkbox"
+              checked={confirmedBackup}
+              onChange={(e) => setConfirmedBackup(e.target.checked)}
+              className="sr-only"
+            />
+            <div
+              className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200 ${
+                confirmedBackup
+                  ? 'bg-emerald-500 border-emerald-500'
+                  : 'border-slate-500 group-hover:border-slate-400'
+              }`}
+            >
+              {confirmedBackup && <Check className="w-3 h-3 text-white" />}
+            </div>
+          </div>
+          <span className="text-sm text-white/80 leading-snug">
+            24単語を紙に書き留めました。このフレーズを安全な場所に保管します。
+          </span>
+        </motion.label>
+
+        {/* Next Button */}
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          onClick={handleConfirmBackup}
+          disabled={!confirmedBackup}
+          whileHover={confirmedBackup ? { scale: 1.02, y: -2 } : {}}
+          whileTap={confirmedBackup ? { scale: 0.98 } : {}}
+          className="w-full flex items-center justify-center gap-2
+                     bg-gradient-to-r from-blue-500 to-cyan-400 text-white
+                     font-semibold py-3 rounded-xl transition-all duration-300
+                     disabled:opacity-40 disabled:cursor-not-allowed
+                     hover:from-blue-600 hover:to-cyan-500"
+        >
+          保存を確認して次へ
+          <ChevronRight className="w-4 h-4" />
+        </motion.button>
+      </div>
+    );
+  }
+
+  // ── Render: Normal Setup UI (backupStep === 'confirmed') ───────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -197,9 +362,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
               <span className="text-xs text-emerald-300">設定済み</span>
             </div>
           ) : (
-            <p className="text-xs text-slate-300">
-              {webAuthnReady ? '未設定' : '非対応'}
-            </p>
+            <p className="text-xs text-slate-300">{webAuthnReady ? '未設定' : '非対応'}</p>
           )}
         </motion.div>
 
@@ -247,9 +410,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
           )}
           <p
             className={`text-sm ${
-              registrationStatus.type === 'success'
-                ? 'text-emerald-300'
-                : 'text-red-300'
+              registrationStatus.type === 'success' ? 'text-emerald-300' : 'text-red-300'
             }`}
           >
             {registrationStatus.message}
@@ -310,15 +471,13 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
                 <CheckCircle className="w-6 h-6 text-emerald-400" />
                 <div>
                   <p className="font-semibold text-emerald-300">セットアップ完了</p>
-                  <p className="text-xs text-emerald-200/70 mt-1">
-                    セキュリティが有効になりました
-                  </p>
+                  <p className="text-xs text-emerald-200/70 mt-1">セキュリティが有効になりました</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* At least one security method required */}
+          {/* No biometric + no PIN available */}
           {!webAuthnEnabled && !pinEnabled && !webAuthnReady && (
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
               <p className="text-xs text-amber-300">
@@ -409,19 +568,11 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50
                              hover:text-white/70 transition-colors"
                 >
-                  {showPin ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {pin && (
-                <p
-                  className={`text-xs mt-2 ${
-                    pinValidation.valid ? 'text-emerald-400' : 'text-amber-400'
-                  }`}
-                >
+                <p className={`text-xs mt-2 ${pinValidation.valid ? 'text-emerald-400' : 'text-amber-400'}`}>
                   {pinValidation.message}
                 </p>
               )}
@@ -429,9 +580,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
 
             {/* PIN Confirm */}
             <div>
-              <label className="text-xs font-semibold text-white/70 block mb-2">
-                PIN を確認
-              </label>
+              <label className="text-xs font-semibold text-white/70 block mb-2">PIN を確認</label>
               <input
                 type={showPin ? 'text' : 'password'}
                 value={pinConfirm}
