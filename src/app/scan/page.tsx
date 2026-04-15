@@ -668,9 +668,24 @@ export default function ScanPage() {
                 backNotes={backNotes}
                 thumbnail={thumbnail}
                 scanPhase={scanPhase}
-                onSave={handleSave}
-                isSaving={isSaving}
-                saveError={saveError}
+                onSave={() => {
+                  // OCR 結果を localStorage に一時保存
+                  const tempData = {
+                    name:    frontResult?.name    ?? null,
+                    company: frontResult?.company ?? null,
+                    title:   frontResult?.title   ?? null,
+                    email:   frontResult?.email   ?? null,
+                    tel:     frontResult?.tel     ?? null,
+                    address: frontResult?.address ?? null,
+                    raw:     frontResult?.raw     ?? null,
+                    notes:   backNotes ?? null,
+                  };
+                  localStorage.setItem('edit_capture_temp', JSON.stringify(tempData));
+                  // 編集画面へ遷移
+                  router.push('/edit');
+                }}
+                isSaving={false}
+                saveError={null}
               />
             </motion.div>
           )}
@@ -945,51 +960,31 @@ function ResultContent({
         </motion.div>
       )}
 
-      {/* 保存ボタン (frontResult が成功している場合に表示) */}
+      {/* 確認画面へボタン (frontResult が成功している場合に表示) */}
       {!frontResult?.error && (
         <motion.button
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-          whileHover={!isSaving ? { scale: 1.02, boxShadow: '0 8px 28px rgba(16,185,129,0.30)' } : {}}
-          whileTap={!isSaving ? { scale: 0.97 } : {}}
+          whileHover={{ scale: 1.02, boxShadow: '0 8px 28px rgba(16,185,129,0.30)' }}
+          whileTap={{ scale: 0.97 }}
           onClick={onSave}
-          disabled={isSaving}
           style={{
             width: '100%',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
             padding: '13px 16px',
-            background: !isSaving
-              ? 'linear-gradient(135deg, rgba(16,185,129,0.55), rgba(5,150,105,0.40))'
-              : 'rgba(16,185,129,0.25)',
-            border: !isSaving
-              ? '1px solid rgba(52,211,153,0.45)'
-              : '1px solid rgba(52,211,153,0.25)',
+            background: 'linear-gradient(135deg, rgba(16,185,129,0.55), rgba(5,150,105,0.40))',
+            border: '1px solid rgba(52,211,153,0.45)',
             borderRadius: 14,
-            color: !isSaving ? '#a7f3d0' : 'rgba(167,243,208,0.5)',
+            color: '#a7f3d0',
             fontSize: 14, fontWeight: 700,
-            cursor: isSaving ? 'not-allowed' : 'pointer',
-            boxShadow: !isSaving ? '0 4px 20px rgba(16,185,129,0.20)' : 'none',
+            cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(16,185,129,0.20)',
             transition: 'all 0.2s ease',
-            opacity: isSaving ? 0.8 : 1,
           }}
         >
-          {isSaving ? (
-            <>
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-              >
-                <ScanLine style={{ width: 16, height: 16 }} />
-              </motion.div>
-              保存中...
-            </>
-          ) : (
-            <>
-              <Check style={{ width: 16, height: 16 }} strokeWidth={2.5} />
-              保存して完了
-            </>
-          )}
+          <Check style={{ width: 16, height: 16 }} strokeWidth={2.5} />
+          確認画面へ進む
         </motion.button>
       )}
     </div>
