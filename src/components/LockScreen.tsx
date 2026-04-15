@@ -499,25 +499,25 @@ export function LockScreen({
           </div>
         )}
 
-        {/* ── Bottom links (non-recovery mode) ───────────────────────────── */}
+        {/* ── Bottom links (always visible) ───────────────────────────────── */}
         {mode !== 'recovery' && (
-          <div className="flex flex-col items-center gap-2 mt-2">
+          <div className="flex flex-col items-center gap-2 mt-4 pt-4 border-t border-white/10">
             <motion.button
-              whileHover={{ opacity: 0.8 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => {
                 setMode('recovery');
                 setLocalError(null);
                 setRecoveryPhrase('');
                 setRecoveryError(null);
                 setRecoverySuccess(false);
-                // Also call external handler if provided
                 onShowRecovery?.();
               }}
-              className="text-sm text-muted-foreground hover:text-foreground
+              className="text-sm font-semibold text-blue-300 hover:text-blue-200
                          flex items-center gap-1.5 underline transition-colors duration-200"
             >
-              <FileText className="w-3.5 h-3.5" />
-              リカバリフレーズを使用する
+              <FileText className="w-4 h-4" />
+              🔑 鍵を紛失しましたか？ リカバリフレーズで復元
             </motion.button>
 
             {onResetSession && (

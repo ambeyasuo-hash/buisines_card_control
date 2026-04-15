@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Key, Database, Save, CheckCircle, BookOpen, Bot,
   Eye, EyeOff, AlertCircle, ScanLine, Sparkles, AlertTriangle, ExternalLink, Check, X, Loader, TestTube,
-  Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone, Mail,
+  Copy, Code2, ChevronDown, Shield, Download, RefreshCw, Smartphone, Mail, FileText,
 } from 'lucide-react';
 import { DevicePairingModal } from './DevicePairingModal';
 import { PersistenceGuideSection } from './PersistenceGuideSection';
@@ -2316,6 +2316,44 @@ export function SettingsPage() {
               </div>
             )}
             <SecuritySetup />
+
+            {/* Recovery Phrase Link */}
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.24 }}
+              style={{
+                background: 'rgba(139,92,246,0.10)',
+                border: '1px solid rgba(168,85,247,0.30)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText style={{ width: '13px', height: '13px', color: 'rgba(168,85,247,0.70)' }} />
+                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.70)' }}>
+                  データの復元（リカバリフレーズ）
+                </span>
+              </div>
+              <motion.a
+                href="/?mode=recovery"
+                whileHover={{ color: '#bfdbfe' }}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  fontSize: '11px',
+                  color: 'rgba(96,165,250,0.70)',
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  transition: 'color 0.15s ease',
+                }}
+              >
+                → アクセス
+              </motion.a>
+            </motion.div>
           </motion.div>
         );
       })()}

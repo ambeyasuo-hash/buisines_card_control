@@ -90,6 +90,7 @@ export default function Home() {
   const [supportsPIN, setSupportsPIN] = useState(false);
   const [securityConfigured, setSecurityConfigured] = useState(false);
   const [showSetupPrompt, setShowSetupPrompt] = useState(false);
+  const [forceRecoveryMode, setForceRecoveryMode] = useState(false);
 
   // Initialize session & check security configuration
   useEffect(() => {
@@ -124,13 +125,25 @@ export default function Home() {
     return unsubscribe;
   }, []);
 
-  // スキャン完了後の ?tab=list ディープリンク対応
+  // URL パラメータ対応: ?mode=recovery / ?tab=list
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+
+    // Recovery mode: ?mode=recovery → Lock screen を強制表示
+    const mode = params.get('mode');
+    if (mode === 'recovery') {
+      setForceRecoveryMode(true);
+      // Ensure lock screen is shown regardless of state
+      setSessionState('LOCKED');
+      setSecurityConfigured(true);
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    // Tab deep-link: ?tab=list/identity/rescue
     const tab = params.get('tab') as ActiveTab | null;
     if (tab && ['list', 'identity', 'rescue'].includes(tab)) {
       setActiveTab(tab);
-      // URL をクリーンに戻す
       window.history.replaceState({}, '', '/');
     }
   }, []);
@@ -203,8 +216,9 @@ export default function Home() {
     setActiveTab('dashboard');
   };
 
-  // Lock Screen overlay - only show if security is configured AND session is locked
-  if (securityConfigured && sessionState === 'LOCKED') {
+  // Lock Screen overlay - show if security is configured AND session is locked
+  // OR if ?mode=recovery is set (force recovery mode access)
+  if ((securityConfigured && sessionState === 'LOCKED') || forceRecoveryMode) {
     return (
       <LockScreen
         onAuthenticateWebAuthn={handleWebAuthnAuth}
@@ -212,6 +226,10 @@ export default function Home() {
         isAuthenticating={isAuthenticating}
         error={authError || undefined}
         supportsPIN={supportsPIN}
+        onShowRecovery={() => {
+          // Recovery handler invoked by LockScreen
+          // (Recovery mode is already set up to show inline)
+        }}
         onResetSession={() => {
           // Clear session and reload to go back to setup
           getSessionManager().destroy();
