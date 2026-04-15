@@ -11,12 +11,17 @@
  *   - WebAuthn対応: 「認証」ボタン → FaceID/指紋プロンプト
  *   - PIN Fallback: PIN pad（4～8桁）
  *   - 代替: 「リカバリキーで復旧」リンク（緊急時）
+ *
+ * フォールバック自動切り替え:
+ *   - WebAuthn がハードウェア的に利用不可 → 自動的に PIN mode に切り替え
+ *   - WebAuthn 認証失敗 → PIN での再認証を提案
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, AlertTriangle, Keyboard } from 'lucide-react';
 import { validatePINStrength } from '@/lib/crypto';
+import { isWebAuthnSupported, isWebAuthnEnabled } from '@/lib/webauthn';
 
 interface LockScreenProps {
   onAuthenticateWebAuthn: () => Promise<boolean>;
@@ -36,15 +41,45 @@ export function LockScreen({
   supportsPIN = true,
 }: LockScreenProps) {
   const [localError, setLocalError] = useState<string | null>(error || null);
-  const [mode, setMode] = useState<'webauthn' | 'pin'>('webauthn');
   const [pin, setPin] = useState('');
   const pinValidation = validatePINStrength(pin);
 
+  // WebAuthn サポート状態を判定（クライアント側のみで実行）
+  const [supportsWebAuthn, setSupportsWebAuthn] = useState(true);
+  const [webAuthnEnabled, setWebAuthnEnabled] = useState(true);
+  const [mode, setMode] = useState<'webauthn' | 'pin'>('webauthn');
+  const [webAuthnFailed, setWebAuthnFailed] = useState(false);
+
+  // クライアント側で WebAuthn サポート状態を確認
+  useEffect(() => {
+    const supports = isWebAuthnSupported();
+    const enabled = isWebAuthnEnabled();
+
+    setSupportsWebAuthn(supports);
+    setWebAuthnEnabled(enabled);
+
+    // WebAuthn が利用不可な場合、自動的に PIN mode に切り替え
+    if (!supports || !enabled) {
+      setMode('pin');
+    }
+  }, []);
+
   const handleWebAuthnClick = async () => {
     setLocalError(null);
+    setWebAuthnFailed(false);
+
     const success = await onAuthenticateWebAuthn();
     if (!success) {
-      setLocalError('認証に失敗しました。もう一度お試しください。');
+      setWebAuthnFailed(true);
+
+      // WebAuthn 失敗時：PIN への自動切り替えを提案（supportsPIN が有効な場合）
+      if (supportsPIN) {
+        setLocalError('生体認証に失敗しました。PIN での認証をお試しください。');
+        setMode('pin');
+        setPin('');
+      } else {
+        setLocalError('認証に失敗しました。もう一度お試しください。');
+      }
     }
   };
 
@@ -131,11 +166,38 @@ export function LockScreen({
         {/* WebAuthn Mode */}
         {mode === 'webauthn' && (
           <>
+            {/* WebAuthn サポート状態の警告 */}
+            {!supportsWebAuthn && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 flex items-start gap-3"
+              >
+                <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-300">
+                  このデバイスは生体認証に対応していません。PIN をご使用ください。
+                </p>
+              </motion.div>
+            )}
+
+            {!webAuthnEnabled && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 flex items-start gap-3"
+              >
+                <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-300">
+                  生体認証がセットアップされていません。PIN をご使用ください。
+                </p>
+              </motion.div>
+            )}
+
             <motion.button
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={supportsWebAuthn && webAuthnEnabled ? { scale: 1.02, y: -2 } : {}}
+              whileTap={supportsWebAuthn && webAuthnEnabled ? { scale: 0.98 } : {}}
               onClick={handleWebAuthnClick}
-              disabled={isAuthenticating}
+              disabled={isAuthenticating || !supportsWebAuthn || !webAuthnEnabled}
               className="w-full bg-gradient-to-r from-blue-500 to-cyan-400 text-white
                          font-semibold py-4 rounded-xl transition-all duration-300
                          disabled:opacity-50 disabled:cursor-not-allowed
@@ -150,6 +212,7 @@ export function LockScreen({
                   setMode('pin');
                   setLocalError(null);
                   setPin('');
+                  setWebAuthnFailed(false);
                 }}
                 className="text-sm text-muted-foreground hover:text-foreground
                            flex items-center gap-1 underline transition-colors duration-200"
