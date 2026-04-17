@@ -80,6 +80,81 @@ const CARD_COLORS = [
   },
 ];
 
+// ─── Incremental Decryption Helpers ──────────────────────────────────────────
+
+/**
+ * バッチサイズ: 1バッチ内で並列復号する件数
+ * Web Crypto は I/O 非同期だが JS コンテキストはメインスレッドを使う。
+ * 15件ずつ並列にすることで逐次200往復→14バッチに削減。
+ */
+const DECRYPT_BATCH_SIZE = 15;
+
+/**
+ * メインスレッドにブラウザが UI タスクを処理する機会を与える
+ *
+ * 優先順位:
+ *   1. scheduler.yield() — Chrome 115+ (Frame-aware yield)
+ *   2. requestIdleCallback — ブラウザアイドル時に実行
+ *   3. setTimeout(0)      — 最低限の yield
+ *
+ * セキュリティ: CryptoKey はメインスレッド外に渡さない。
+ *              yield するだけで Worker に委譲しない。
+ */
+async function yieldToMain(): Promise<void> {
+  type SchedulerWithYield = { yield?: () => Promise<void> };
+  const sched = typeof globalThis !== 'undefined' && 'scheduler' in globalThis
+    ? (globalThis as unknown as { scheduler: SchedulerWithYield }).scheduler
+    : undefined;
+
+  if (typeof sched?.yield === 'function') {
+    await sched.yield();
+  } else if (typeof requestIdleCallback !== 'undefined') {
+    await new Promise<void>((resolve) =>
+      requestIdleCallback(() => resolve(), { timeout: 16 }),
+    );
+  } else {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+/**
+ * 1バッチ分の復号を Promise.allSettled で並列実行
+ *
+ * ZK 原則: CryptoKey は引数として受け取り、戻り値に含めない。
+ *          raw key バイト列はいかなるログにも出力しない。
+ */
+async function decryptBatch(
+  batch: RawCard[],
+  key: CryptoKey,
+): Promise<{ cards: DecryptedCard[]; errCount: number }> {
+  const results = await Promise.allSettled(
+    batch.map((raw) =>
+      decryptData<Record<string, string | null>>(raw.encrypted_data, key).then(
+        (plain): DecryptedCard => ({
+          id:            raw.id,
+          name:          plain.name    ?? undefined,
+          company:       plain.company ?? undefined,
+          title:         plain.title   ?? undefined,
+          email:         plain.email   ?? undefined,
+          tel:           plain.tel     ?? undefined,
+          address:       plain.address ?? undefined,
+          notes:         plain.notes   ?? undefined,
+          scanned_at:    raw.scanned_at,
+          thumbnail_url: raw.thumbnail_url,
+        }),
+      ),
+    ),
+  );
+
+  const cards: DecryptedCard[] = [];
+  let errCount = 0;
+  for (const r of results) {
+    if (r.status === 'fulfilled') cards.push(r.value);
+    else errCount++;
+  }
+  return { cards, errCount };
+}
+
 // ─── Dashboard Component ──────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -93,10 +168,11 @@ export function Dashboard() {
   const [sortType,         setSortType]         = useState<SortType>('recent');
   const [showSortMenu,     setShowSortMenu]     = useState(false);
 
-  // ── Fetch & Decrypt ───────────────────────────────────────────────────────
+  // ── Fetch & Decrypt (インクリメンタル版) ──────────────────────────────────
 
   const fetchAndDecrypt = useCallback(async () => {
     setLoadState('loading');
+    setCards([]);
     setErrorMsg(null);
     setDecryptErrCount(0);
 
@@ -128,37 +204,47 @@ export function Dashboard() {
         return;
       }
 
-      // ③ 端末内で AES-256-GCM 復号
-      const { key } = await getOrCreateEncryptionKey();
-      let errCount = 0;
-      const decrypted: DecryptedCard[] = [];
+      // ③ 端末内 AES-256-GCM 復号 — インクリメンタルバッチ処理
+      //
+      // パフォーマンス設計:
+      //   - バッチ内は Promise.allSettled で並列復号（I/O 効率化）
+      //   - バッチ間は yieldToMain() でメインスレッドを解放（Jank 防止）
+      //   - 第1バッチ完了後に loadState → 'success' へ遷移（体感速度向上）
+      //   - setCards を各バッチ後に呼ぶことで先頭カードを即レンダリング
+      //
+      // Web Worker 採用を見送った理由:
+      //   - CryptoKey は structured clone 可能だが非抽出のまま転送すると
+      //     key ownership が不明確になりセキュリティ境界が曖昧になる
+      //   - 1枚 ~0.5-2ms の復号は CPU ヘビーではなく I/O ヘビー。
+      //     yield + 並列化でメインスレッドのブロック時間を実用的なレベルに抑えられる
+      //   - Next.js App Router での Worker バンドルは追加設定が必要
 
-      for (const raw of data as RawCard[]) {
-        try {
-          const plain = await decryptData<Record<string, string | null>>(
-            raw.encrypted_data,
-            key,
-          );
-          decrypted.push({
-            id:           raw.id,
-            name:         plain.name    ?? undefined,
-            company:      plain.company ?? undefined,
-            title:        plain.title   ?? undefined,
-            email:        plain.email   ?? undefined,
-            tel:          plain.tel     ?? undefined,
-            address:      plain.address ?? undefined,
-            notes:        plain.notes   ?? undefined,
-            scanned_at:   raw.scanned_at,
-            thumbnail_url: raw.thumbnail_url,
-          });
-        } catch {
-          // ④ ガード節: 復号失敗のカードは除外してカウントのみ
-          errCount++;
+      const { key } = await getOrCreateEncryptionKey();
+      const rawCards = data as RawCard[];
+      const accumulated: DecryptedCard[] = [];
+      let totalErrCount = 0;
+
+      for (let i = 0; i < rawCards.length; i += DECRYPT_BATCH_SIZE) {
+        const batch = rawCards.slice(i, i + DECRYPT_BATCH_SIZE);
+        const { cards: batchCards, errCount: batchErr } = await decryptBatch(batch, key);
+
+        accumulated.push(...batchCards);
+        totalErrCount += batchErr;
+
+        // 各バッチ後に状態更新 → プログレッシブレンダリング
+        setCards([...accumulated]);
+        setDecryptErrCount(totalErrCount);
+
+        // 第1バッチ完了後すぐに success 遷移（最初のカードをすぐ表示）
+        if (i === 0) setLoadState('success');
+
+        // 最終バッチ以外はメインスレッドに制御を返す
+        if (i + DECRYPT_BATCH_SIZE < rawCards.length) {
+          await yieldToMain();
         }
       }
 
-      setCards(decrypted);
-      setDecryptErrCount(errCount);
+      // 全バッチ完了（第1バッチ前に全件 0 だった場合の保険）
       setLoadState('success');
 
     } catch (e) {
@@ -251,15 +337,12 @@ export function Dashboard() {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', gap: 16, padding: '48px 24px',
+        justifyContent: 'center', gap: 20, padding: '48px 24px',
       }}>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-        >
-          <RefreshCw style={{ width: 28, height: 28, color: '#3b82f6' }} />
-        </motion.div>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.40)' }}>名刺データを読み込み中...</p>
+        <span className="lux-dots"><span /><span /><span /></span>
+        <p style={{ fontSize: 11, color: 'rgba(212,175,55,0.45)', letterSpacing: '0.06em' }}>
+          名刺データを読み込み中
+        </p>
       </div>
     );
   }
