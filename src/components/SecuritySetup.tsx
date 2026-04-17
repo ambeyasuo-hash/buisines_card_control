@@ -164,11 +164,33 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
     // このブロック内で失敗したら rollbackLocalStorage() を呼ぶ
     // LocalStorage への書き込みは commit オブジェクト完成後の最後のみ
     try {
-      // Step 1: Data Key を生成（メモリのみ）
+      // Step 1: Encryption salt を同期で先行生成（WebAuthn の user.id に使う）
+      // crypto.randomUUID() は同期なので非同期待ちゼロ → user gesture window を消費しない
+      const encryptionSalt = crypto.randomUUID();
+      const stableUserId   = new TextEncoder().encode(encryptionSalt); // UUID → Uint8Array
+
+      // Step 2: ブラウザの user gesture window が開いている間に WebAuthn 登録を呼ぶ
+      // ← ここより前に await を入れると iOS/Android でセキュリティ・ウィンドウが失効する
+      const result = await registerWebAuthnCredential(stableUserId);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+
+      // Step 3: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
+      const assertion = await assertWebAuthnCredential();
+      if (!assertion.success || !assertion.signature) {
+        throw new Error(assertion.message || 'WebAuthn assertion に失敗しました');
+      }
+
+      // Step 4: WebAuthn 完了後に Data Key を生成（重い非同期処理はここから）
       const dataKey    = await generateDataKey();
       const dataKeyB64 = await exportDataKey(dataKey);
 
-      // Step 2: API キーを Data Key で暗号化（メモリのみ）
+      // Step 5: Level 1 wrapping key を assertion signature から導出 → Data Key をラップ
+      const wrappingKeyAlpha = await deriveWrappingKeyFromAssertion(assertion.signature);
+      const wrappedAlpha     = await wrapDataKey(dataKey, wrappingKeyAlpha);
+
+      // Step 5b: API キーを Data Key で暗号化（WebAuthn 後なので user gesture 問題なし）
       const azureEndpoint = localStorage.getItem('azure_ocr_endpoint')?.trim() ?? '';
       const azureApiKey   = localStorage.getItem('azure_ocr_key')?.trim()      ?? '';
       let encryptedApiCredentials: string | null = null;
@@ -178,25 +200,6 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
           dataKey,
         );
       }
-
-      // Step 3: Encryption salt を先に生成（WebAuthn の user.id に使うため）
-      // user.id が毎回変わると「別人の鍵」とみなされ保存を拒否されるため、先行生成が必須
-      const encryptionSalt   = crypto.randomUUID();
-      const stableUserId     = new TextEncoder().encode(encryptionSalt); // UUID → Uint8Array
-
-      // Step 4: WebAuthn credential を登録（stableUserId を渡すことで同一ユーザーと認識される）
-      const result = await registerWebAuthnCredential(stableUserId);
-      if (!result.success) {
-        throw new Error(result.message);
-      }
-
-      // Step 5: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
-      const assertion = await assertWebAuthnCredential();
-      if (!assertion.success || !assertion.signature) {
-        throw new Error(assertion.message || 'WebAuthn assertion に失敗しました');
-      }
-      const wrappingKeyAlpha = await deriveWrappingKeyFromAssertion(assertion.signature);
-      const wrappedAlpha     = await wrapDataKey(dataKey, wrappingKeyAlpha);
 
       // Step 6: リカバリ wrapping key (Level 2) を生成
       const recoveryBytes    = crypto.getRandomValues(new Uint8Array(32));

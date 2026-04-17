@@ -102,6 +102,24 @@ export function isSecurityConfigured(): boolean {
   return false;
 }
 
+// ─── RP ID Resolution ─────────────────────────────────────────────────────
+
+/**
+ * WebAuthn の rp.id を動的に解決する
+ *
+ * - localhost          → 'localhost'  (WebAuthn spec で明示許可)
+ * - IPアドレス         → undefined    (spec 上 RP ID に IP は使えない。省略してブラウザに委ねる)
+ * - 通常のホスト名     → そのまま使用 (vercel.app, 独自ドメイン等)
+ */
+function resolveRpId(): string | undefined {
+  if (typeof window === 'undefined') return 'localhost';
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return 'localhost';
+  // IPv4 or IPv6 → omit (browser uses effective domain)
+  if (/^[\d.:[\]]+$/.test(host)) return undefined;
+  return host;
+}
+
 // ─── Credential Registration ──────────────────────────────────────────────
 
 /**
@@ -145,13 +163,13 @@ export async function registerWebAuthnCredential(
       }
     }
 
-    const rpId = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    const rpId = resolveRpId();
 
     const creationOptions: PublicKeyCredentialCreationOptions = {
       challenge,
       rp: {
         name: 'あんべの名刺代わり',
-        id: rpId,
+        ...(rpId !== undefined && { id: rpId }),
       },
       user: {
         // stableUserId = encryption_salt の UTF-8 bytes → 常に同じ値でブラウザが同一ユーザーと認識
@@ -165,15 +183,25 @@ export async function registerWebAuthnCredential(
       ],
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
-        userVerification: 'required',
-        residentKey: 'required', // デバイス側で鍵を検索可能に（パスキー標準）
+        userVerification: 'preferred', // 生体認証が不安定な場合にパスコードで代替可能
+        residentKey: 'required',
       },
       excludeCredentials,
-      attestation: 'none', // プライバシー保護のため attestation 不要
+      attestation: 'none',
       timeout: 60000,
     };
 
-    console.log(`[WebAuthn] Registering credential — rpId=${rpId}, excludeCredentials=${excludeCredentials.length}`);
+    // デバッグ: options 全体を出力して challenge / user.id の型を確認
+    console.log('[WebAuthn] creationOptions:', {
+      rpId,
+      rpIdOmitted: rpId === undefined,
+      challenge: Array.from(challenge).slice(0, 8).map(b => b.toString(16).padStart(2,'0')).join('') + '...',
+      userIdBytes: Array.from(stableUserId).slice(0, 8).map(b => b.toString(16).padStart(2,'0')).join('') + '...',
+      userIdLength: stableUserId.length,
+      excludeCredentials: excludeCredentials.length,
+      residentKey: creationOptions.authenticatorSelection?.residentKey,
+      userVerification: creationOptions.authenticatorSelection?.userVerification,
+    });
 
     const credential = (await navigator.credentials.create({
       publicKey: creationOptions,
