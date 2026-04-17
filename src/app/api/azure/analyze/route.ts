@@ -237,16 +237,142 @@ function classifyAnalysisFailure(mode: 'front' | 'back'): string {
   );
 }
 
+// ─── Retry & Timeout Helpers ──────────────────────────────────────────────────
+
+/** submit fetch のリトライ設定 */
+const SUBMIT_RETRY_MAX    = 3;   // 最大試行回数（初回 + 最大2回リトライ）
+const SUBMIT_TIMEOUT_MS   = 20_000; // 1回の submit fetch タイムアウト (20s)
+const SUBMIT_RETRY_DELAYS = [1000, 2000, 4000] as const; // 指数バックオフ
+
+/** HTTP ステータスが自動リトライ対象か (429 / 5xx) */
+function isRetryable(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+/** Retry-After ヘッダー (秒) → ms。存在しない or 過大な場合は undefined */
+function parseRetryAfter(res: Response): number | undefined {
+  const h = res.headers.get('Retry-After');
+  if (!h) return undefined;
+  const secs = parseInt(h, 10);
+  // 最大 8s に制限（ポーリング全体のタイムアウトを圧迫しないよう）
+  return isNaN(secs) ? undefined : Math.min(secs * 1000, 8_000);
+}
+
+/**
+ * 指数バックオフ付き fetch (submit フェーズ専用)
+ *
+ * - 429 / 5xx のみリトライ (最大 SUBMIT_RETRY_MAX 回)
+ * - AbortController で 1 回あたり SUBMIT_TIMEOUT_MS 以内に制限
+ * - TypeError (Load failed / ネットワーク到達不能) → 即座に再 throw（リトライ無効）
+ * - AbortError (タイムアウト)                      → 'FETCH_TIMEOUT' エラーを throw
+ *
+ * ZK 原則: API キーは options.headers に含まれるが、ログには URL とステータスのみ出力。
+ * headers の内容は一切ログに出力しない。
+ */
+async function fetchWithRetry(
+  url: string,
+  options: Omit<RequestInit, 'signal'>,
+): Promise<Response> {
+  // URL にシークレットが混入していないことを確認（念のためマスク）
+  const safeUrl = url.split('?')[0] + '?[params]';
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < SUBMIT_RETRY_MAX; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (!isRetryable(res.status)) return res; // 成功 or リトライ不要
+
+      // 429 / 5xx → バックオフ後にリトライ
+      const delay = parseRetryAfter(res) ?? SUBMIT_RETRY_DELAYS[attempt] ?? 4000;
+      console.warn(
+        `[Azure/analyze] HTTP ${res.status} attempt=${attempt + 1}/${SUBMIT_RETRY_MAX}` +
+        ` — retrying in ${delay}ms (${safeUrl})`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+      lastErr = new Error(`SUBMIT_HTTP_${res.status}`);
+
+    } catch (err) {
+      clearTimeout(timer);
+      const name = err instanceof Error ? err.name : '';
+
+      if (name === 'AbortError') {
+        throw new Error('FETCH_TIMEOUT'); // タイムアウト → リトライしない
+      }
+      if (name === 'TypeError') {
+        throw err; // ネットワーク到達不能 → リトライしない
+      }
+
+      lastErr = err;
+      const delay = SUBMIT_RETRY_DELAYS[attempt] ?? 4000;
+      console.warn(
+        `[Azure/analyze] fetch error [${name}] attempt=${attempt + 1}/${SUBMIT_RETRY_MAX}` +
+        ` — retrying in ${delay}ms`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  // リトライ上限に達した場合
+  throw lastErr ?? new Error('SUBMIT_EXHAUSTED');
+}
+
 // ─── Azure Polling ────────────────────────────────────────────────────────────
+
+/**
+ * ポーリング 1 回分の fetch (429/5xx は 1 回だけ短いバックオフでリトライ)
+ *
+ * ZK 原則: apiKey はヘッダーにのみ使用し、ログに出力しない。
+ */
+async function pollOnce(operationUrl: string, apiKey: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000); // ポーリング 1 回: 10s timeout
+  try {
+    const res = await fetch(operationUrl, {
+      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    // 429 / 5xx はポーリング内で 1 回だけリトライ（長いリトライはしない）
+    if (isRetryable(res.status)) {
+      const delay = parseRetryAfter(res) ?? 2000;
+      console.warn(`[Azure/analyze] poll HTTP ${res.status} — waiting ${delay}ms then retrying once`);
+      await new Promise((r) => setTimeout(r, delay));
+
+      const controller2 = new AbortController();
+      const timer2 = setTimeout(() => controller2.abort(), 10_000);
+      try {
+        const res2 = await fetch(operationUrl, {
+          headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+          signal: controller2.signal,
+        });
+        clearTimeout(timer2);
+        return res2;
+      } catch {
+        clearTimeout(timer2);
+        throw new Error(`POLL_HTTP_${res.status}`);
+      }
+    }
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    const name = err instanceof Error ? err.name : '';
+    if (name === 'AbortError') throw new Error('POLL_TIMEOUT');
+    throw err;
+  }
+}
 
 /** ポーリング — 表面 (prebuilt-businessCard → OcrResult) */
 async function pollFront(operationUrl: string, apiKey: string): Promise<OcrResult> {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1000));
 
-    const res = await fetch(operationUrl, {
-      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
-    });
+    const res = await pollOnce(operationUrl, apiKey);
     if (!res.ok) throw new Error(`POLL_HTTP_${res.status}`);
 
     const data = await res.json() as {
@@ -270,9 +396,7 @@ async function pollBack(operationUrl: string, apiKey: string): Promise<string> {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1000));
 
-    const res = await fetch(operationUrl, {
-      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
-    });
+    const res = await pollOnce(operationUrl, apiKey);
     if (!res.ok) throw new Error(`POLL_HTTP_${res.status}`);
 
     const data = await res.json() as {
@@ -316,6 +440,39 @@ function mapPollError(err: unknown, mode: 'front' | 'back'): string {
     return `解析結果の取得に失敗しました（HTTP ${code}）。しばらく後に再試行してください。`;
   }
   // TypeError などのネットワーク系
+  return classifyFetchError(err);
+}
+
+/**
+ * fetchWithRetry が throw したエラーをユーザー向けメッセージに変換
+ * (submit フェーズのリトライ上限到達 / タイムアウト)
+ */
+function mapSubmitError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : '';
+
+  if (msg === 'FETCH_TIMEOUT') {
+    return (
+      'Azure への接続がタイムアウトしました（20秒以内に応答なし）。\n\n' +
+      '① ネットワーク接続を確認してください\n' +
+      '② しばらく待ってから再試行してください\n' +
+      '③ 問題が続く場合は Azure Portal でリソースの状態を確認してください'
+    );
+  }
+  if (msg.startsWith('SUBMIT_HTTP_')) {
+    const code = msg.replace('SUBMIT_HTTP_', '');
+    return (
+      `Azure へのリクエストが繰り返し失敗しました（HTTP ${code}）。\n\n` +
+      'しばらく時間をおいてから再試行してください。'
+    );
+  }
+  if (msg === 'SUBMIT_EXHAUSTED') {
+    return (
+      'Azure へのリクエストが最大試行回数に達しました。\n\n' +
+      'しばらく待ってから再試行してください。\n' +
+      'ネットワーク接続も合わせて確認してください。'
+    );
+  }
+  // TypeError: Load failed などのネットワーク到達不能
   return classifyFetchError(err);
 }
 
@@ -376,7 +533,8 @@ export async function POST(request: Request): Promise<Response> {
     for (const analyzeUrl of analyzePaths) {
       let res: Response;
       try {
-        res = await fetch(analyzeUrl, {
+        // 指数バックオフ付きリトライ (429/5xx のみ、最大 SUBMIT_RETRY_MAX 回)
+        res = await fetchWithRetry(analyzeUrl, {
           method: 'POST',
           headers: {
             'Ocp-Apim-Subscription-Key': apiKey,
@@ -385,13 +543,11 @@ export async function POST(request: Request): Promise<Response> {
           body: imageBuffer,
         });
       } catch (err) {
-        // TypeError: Load failed (iOS Safari) / TypeError: fetch failed (Node.js)
-        // → URL が到達不能 or DNS 解決失敗。次パスを試しても同じなので即座に返す
-        const errName = err instanceof Error ? err.name : 'unknown';
+        const errName = err instanceof Error ? err.name    : 'unknown';
         const errMsg  = err instanceof Error ? err.message : String(err);
-        console.error(`[Azure/analyze] fetch threw [${errName}]: ${errMsg} — url: ${analyzeUrl}`);
+        console.error(`[Azure/analyze] fetchWithRetry threw [${errName}]: ${errMsg}`);
         fetchError = err;
-        break; // 両パスとも同じ原因で失敗するため continue しない
+        break; // TypeError / FETCH_TIMEOUT → 両パスで同じ結果のため break
       }
 
       lastStatus = res.status;
@@ -415,10 +571,10 @@ export async function POST(request: Request): Promise<Response> {
       // 404 → 次のパスへ
     }
 
-    // fetch 自体が TypeError で失敗した場合
+    // fetchWithRetry が throw (TypeError / FETCH_TIMEOUT / リトライ上限) の場合
     if (fetchError !== null) {
       return Response.json(
-        { ok: false, error: classifyFetchError(fetchError) } as AnalyzeResponse,
+        { ok: false, error: mapSubmitError(fetchError) } as AnalyzeResponse,
         { status: 200 },
       );
     }
