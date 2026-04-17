@@ -245,8 +245,10 @@ export function LockScreen({
             >
               {isAuthenticating ? (
                 <span className="flex items-center justify-center gap-2">
-                  <Loader className="w-4 h-4 animate-spin" />
-                  認証中...
+                  <span className="lux-dots">
+                    <span /><span /><span />
+                  </span>
+                  <span style={{ fontSize: 13, color: 'rgba(212,175,55,0.85)', letterSpacing: '0.06em' }}>認証中</span>
                 </span>
               ) : '認証'}
             </motion.button>
@@ -397,8 +399,10 @@ export function LockScreen({
               >
                 {isRecovering ? (
                   <span className="flex items-center justify-center gap-2">
-                    <Loader className="w-4 h-4 animate-spin" />
-                    復元中...
+                    <span className="lux-dots">
+                      <span /><span /><span />
+                    </span>
+                    <span style={{ fontSize: 13, letterSpacing: '0.06em' }}>復元中</span>
                   </span>
                 ) : recoverySuccess ? '復元完了' : 'キーを復元'}
               </motion.button>

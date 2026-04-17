@@ -1,4 +1,4 @@
-/* Phoenix Edition v5.0.5 Design System - Global Styles */
+/* Ambe Design System v5.0.6 - Obsidian & Champagne Gold */
 @import "tailwindcss";
 
 /* ============================================
@@ -16,6 +16,16 @@
   --color-text: #0F172A;
   --color-text-secondary: #475569;
   --color-text-muted: #94A3B8;
+
+  /* v5.0.6: Obsidian & Champagne Gold */
+  --color-gold:          #D4AF37;
+  --color-gold-dim:      rgba(212, 175, 55, 0.55);
+  --color-gold-subtle:   rgba(212, 175, 55, 0.12);
+  --color-silver:        #C0C0C0;
+  --color-silver-subtle: rgba(192, 192, 192, 0.15);
+  --color-obsidian:      #000000;
+  --color-obsidian-50:   #0A0A0A;
+  --color-obsidian-100:  #111111;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -97,9 +107,10 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
+  /* v5.0.6: 漆黒に溶け込む微細なゴールドとシルバーの光芒 */
   background:
-    radial-gradient(circle at 20% 50%, rgba(37, 99, 235, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+    radial-gradient(ellipse at 18% 38%, rgba(212, 175, 55, 0.055) 0%, transparent 48%),
+    radial-gradient(ellipse at 82% 72%, rgba(192, 192, 192, 0.035) 0%, transparent 42%);
   pointer-events: none;
   z-index: -1;
 }
@@ -323,6 +334,119 @@ select {
   body {
     background-color: white;
   }
+}
+
+/* ============================================
+   v5.0.6 Luxury Loading Animations
+   「静寂と信頼」— 光が静かに織りなされる演出
+   ============================================ */
+
+/**
+ * .lux-dots — ゴールドの三点呼吸ローダー
+ * ZK復号中・認証中に使用。スピナーの代わりに「息を吸う」ような点灯。
+ */
+.lux-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lux-dots span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-gold);
+  animation: gold-breathe 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  box-shadow: 0 0 6px rgba(212, 175, 55, 0.4);
+}
+
+.lux-dots span:nth-child(2) { animation-delay: 0.38s; }
+.lux-dots span:nth-child(3) { animation-delay: 0.76s; }
+
+@keyframes gold-breathe {
+  0%, 100% { opacity: 0.12; transform: scale(0.7); }
+  50%       { opacity: 1;    transform: scale(1.1); }
+}
+
+/**
+ * .lux-thread — 水平方向に走る金の光糸
+ * OCR 解析中のメインエリアで使用。
+ */
+.lux-thread-wrap {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  background: rgba(212, 175, 55, 0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.lux-thread-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(212, 175, 55, 0.7) 40%,
+    rgba(228, 200, 74, 1)   50%,
+    rgba(212, 175, 55, 0.7) 60%,
+    transparent 100%);
+  border-radius: 9999px;
+  animation: light-thread 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes light-thread {
+  0%   { transform: translateX(-160%); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateX(360%);  opacity: 0; }
+}
+
+/**
+ * .lux-ring — 漆黒地に浮かぶゴールドのリング
+ * page.tsx のセキュリティ確認中ローダーで使用。
+ * スピナーではなく「脈打つ円」で存在を示す。
+ */
+.lux-ring {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(212, 175, 55, 0.18);
+  position: relative;
+  animation: shimmer-pulse 2.6s ease-in-out infinite;
+}
+
+.lux-ring::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 9999px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  animation: shimmer-pulse 2.6s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+.lux-ring::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--color-gold);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.6);
+  animation: gold-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes shimmer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+  50%       { box-shadow: 0 0 0 5px rgba(212,175,55,0.10), 0 0 20px rgba(212,175,55,0.06); }
 }
 
 /* ============================================

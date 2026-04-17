@@ -1,5 +1,5 @@
 // (c) 2026 ambe / Business_Card_Folder
-// Phoenix Edition v5.0.5 Design System
+// Ambe Design System v5.0.6 — Obsidian & Champagne Gold Edition
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -87,6 +87,29 @@ const config: Config = {
       pink: {
         400: "#F472B6",
         500: "#EC4899",
+      },
+      // ── v5.0.6: Obsidian & Champagne Gold ────────────────────────────────
+      gold: {
+        100: "#F5EAB0",
+        200: "#EDD97A",
+        300: "#E4C84A",
+        400: "#D4AF37", // Champagne Gold (primary accent)
+        500: "#B8960C",
+        600: "#9A7B0A",
+      },
+      silver: {
+        200: "#E8E8E8",
+        300: "#D0D0D0",
+        400: "#C0C0C0", // Silver (secondary accent)
+        500: "#A8A8A8",
+        600: "#909090",
+      },
+      obsidian: {
+        DEFAULT: "#000000",
+        50:  "#0A0A0A",
+        100: "#111111",
+        200: "#1A1A1A",
+        300: "#242424",
       },
       transparent: "transparent",
       current: "currentColor",
@@ -195,6 +218,26 @@ const config: Config = {
           "0%, 100%": { boxShadow: "0 0 20px rgba(37, 99, 235, 0.3)" },
           "50%": { boxShadow: "0 0 30px rgba(37, 99, 235, 0.5)" },
         },
+        // ── v5.0.6 Luxury Animations ───────────────────────────────────────
+        // 静寂と信頼: 息を吸うような、ゆっくりとした光の動き
+        "gold-breathe": {
+          "0%, 100%": { opacity: "0.15", transform: "scale(0.82)" },
+          "50%":       { opacity: "1",    transform: "scale(1)" },
+        },
+        "light-thread": {
+          "0%":   { transform: "translateX(-120%)", opacity: "0" },
+          "15%":  { opacity: "1" },
+          "85%":  { opacity: "1" },
+          "100%": { transform: "translateX(520%)",  opacity: "0" },
+        },
+        "shimmer-pulse": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(212,175,55,0)" },
+          "50%":       { boxShadow: "0 0 0 6px rgba(212,175,55,0.12), 0 0 24px rgba(212,175,55,0.08)" },
+        },
+        "gold-fade-in": {
+          "0%":   { opacity: "0", transform: "translateY(6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         scan: "scan 1.6s ease-in-out infinite",
@@ -203,6 +246,11 @@ const config: Config = {
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",
         float: "float 3s ease-in-out infinite",
         glow: "glow 2s ease-in-out infinite",
+        // v5.0.6 luxury
+        "gold-breathe":  "gold-breathe 2.4s cubic-bezier(0.45,0,0.55,1) infinite",
+        "light-thread":  "light-thread 2.8s cubic-bezier(0.4,0,0.6,1) infinite",
+        "shimmer-pulse": "shimmer-pulse 2.6s ease-in-out infinite",
+        "gold-fade-in":  "gold-fade-in 0.5s ease-out forwards",
       },
     },
   },

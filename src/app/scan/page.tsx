@@ -587,36 +587,27 @@ export default function ScanPage() {
           {scanState === 'analyzing' && (
             <motion.div
               key="analyzing"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}
+              transition={{ duration: 0.4 }}
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}
             >
-              <motion.div
-                animate={{ scale: [1, 1.09, 1], opacity: [0.65, 1, 0.65] }}
-                transition={{ duration: 2.2, repeat: Infinity }}
-                style={{ width: 72, height: 72, borderRadius: 22, background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(52,211,153,0.38)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ScanLine style={{ width: 34, height: 34, color: '#6ee7b7' }} strokeWidth={1.5} />
-              </motion.div>
+              {/* ゴールドのリング — 「脈打つ」存在感 */}
+              <div className="lux-ring" style={{ width: 52, height: 52 }} />
+
+              {/* テキスト */}
               <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.88)' }}>
-                  {scanPhase === 'front' ? 'OCR 解析中' : '裏面テキスト抽出中'}
+                <p style={{ fontSize: 15, fontWeight: 500, color: 'rgba(212,175,55,0.90)', letterSpacing: '0.06em' }}>
+                  {scanPhase === 'front' ? 'OCR 解析中' : 'テキスト抽出中'}
                 </p>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', marginTop: 6 }}>
-                  Azure AI で {scanPhase === 'front' ? '名刺フィールドを認識' : '全文テキストを抽出'} しています...
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 6, letterSpacing: '0.04em' }}>
+                  Azure AI が{scanPhase === 'front' ? '名刺フィールドを認識' : '全文テキストを抽出'}しています
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {[0, 1, 2, 3].map((i) => (
-                  <motion.div key={i}
-                    animate={{ opacity: [0.15, 1, 0.15], scaleY: [0.5, 1.5, 0.5] }}
-                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
-                    style={{ width: 4, height: 22, borderRadius: 2, background: '#10b981' }}
-                  />
-                ))}
-              </div>
+
+              {/* 光の糸 — 静かに走る水平ライン */}
+              <div className="lux-thread-wrap" style={{ width: 120 }} />
             </motion.div>
           )}
 
@@ -758,15 +749,12 @@ export default function ScanPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
               >
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
-                >
-                  <ScanLine style={{ width: 24, height: 24, color: '#10b981' }} />
-                </motion.div>
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.40)', textAlign: 'center' }}>解析中...</p>
+                <span className="lux-dots">
+                  <span /><span /><span />
+                </span>
+                <p style={{ fontSize: 9, color: 'rgba(212,175,55,0.45)', textAlign: 'center', letterSpacing: '0.06em' }}>解析中</p>
               </motion.div>
             )}
 

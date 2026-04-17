@@ -283,10 +283,13 @@ export default function Home() {
   // Vault 整合性チェック中はローディング表示
   if (vaultIntegrityChecking) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          <p className="text-xs text-muted-foreground">セキュリティを確認中...</p>
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: '#000' }}>
+        <div className="flex flex-col items-center gap-5">
+          {/* lux-ring: 脈打つゴールドのリング */}
+          <div className="lux-ring" />
+          <p style={{ fontSize: 11, color: 'rgba(212,175,55,0.55)', letterSpacing: '0.08em' }}>
+            セキュリティを確認中
+          </p>
         </div>
       </div>
     );
