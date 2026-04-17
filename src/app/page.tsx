@@ -14,6 +14,7 @@ import { Camera, List, Settings, CreditCard, LogOut, Contact } from 'lucide-reac
 import { getSessionManager, initializeSession, type SessionState } from '@/lib/auth-session';
 import { assertWebAuthnCredential, isSecurityConfigured } from '@/lib/webauthn';
 import { deriveWrappingKeyFromAssertion, unwrapMasterKey } from '@/lib/crypto';
+import { loadVaultFromSupabase, unwrapDataKey } from '@/lib/vault';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
@@ -87,7 +88,6 @@ export default function Home() {
   const [sessionState, setSessionState] = useState<SessionState>('LOCKED');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [supportsPIN, setSupportsPIN] = useState(false);
   const [securityConfigured, setSecurityConfigured] = useState(false);
   const [showSetupPrompt, setShowSetupPrompt] = useState(false);
   const [forceRecoveryMode, setForceRecoveryMode] = useState(false);
@@ -115,8 +115,6 @@ export default function Home() {
     } else {
       setSessionState(manager.getState());
     }
-
-    setSupportsPIN(manager.isPINEnabled());
 
     const unsubscribe = manager.onStateChange((newState) => {
       setSessionState(newState);
@@ -166,14 +164,29 @@ export default function Home() {
       // Step 2: Assertion signature から wrapping key を導出
       const wrappingKey = await deriveWrappingKeyFromAssertion(assertionResult.signature);
 
-      // Step 3: Wrapped master key を localStorage から取得して unwrap
-      const wrappedKeyB64 = localStorage.getItem('encryption_key_wrapped_b64');
-      if (!wrappedKeyB64) {
-        throw new Error('Wrapped master key not found. Please register a PIN first.');
+      // Step 3: Supabase vault から wrapped_data_key_alpha を取得して unwrap
+      const encryptionSalt = localStorage.getItem('encryption_salt');
+      let masterKey: CryptoKey | null = null;
+
+      if (encryptionSalt) {
+        try {
+          const vault = await loadVaultFromSupabase(encryptionSalt);
+          if (vault?.wrapped_data_key_alpha) {
+            masterKey = await unwrapDataKey(vault.wrapped_data_key_alpha, wrappingKey);
+          }
+        } catch {
+          // Supabase 取得失敗 → localStorage フォールバック
+        }
       }
 
-      // Step 4: Master key を unwrap
-      const masterKey = await unwrapMasterKey(wrappedKeyB64, wrappingKey);
+      // Step 4: フォールバック — localStorage の wrapped key を使用（後方互換）
+      if (!masterKey) {
+        const wrappedKeyB64 = localStorage.getItem('encryption_key_wrapped_b64');
+        if (!wrappedKeyB64) {
+          throw new Error('Wrapped master key not found. Please register again.');
+        }
+        masterKey = await unwrapMasterKey(wrappedKeyB64, wrappingKey);
+      }
 
       // Step 5: Session に master key を設定
       manager.setMasterKey(masterKey);
@@ -222,16 +235,9 @@ export default function Home() {
     return (
       <LockScreen
         onAuthenticateWebAuthn={handleWebAuthnAuth}
-        onAuthenticatePIN={handlePINAuth}
         isAuthenticating={isAuthenticating}
         error={authError || undefined}
-        supportsPIN={supportsPIN}
-        onShowRecovery={() => {
-          // Recovery handler invoked by LockScreen
-          // (Recovery mode is already set up to show inline)
-        }}
         onResetSession={() => {
-          // Clear session and reload to go back to setup
           getSessionManager().destroy();
           localStorage.clear();
           window.location.reload();

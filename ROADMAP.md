@@ -263,55 +263,47 @@
 
 ---
 
-## 📚 Phase 9: Documentation & Onboarding (Planned)
+## 🟥 Phase 9: 次世代統合フェーズ (CPO 提言 2026-04-17)
 
-**目標**: Zero-Knowledge アーキテクチャの透明性を確保し、ユーザーが「何が保護されているのか」「どのようなデータフローで安全なのか」を理解できるガイドを提供。
+**目標**: 階層型 Data Key 構造への移行と「顔認証ファースト」UX の実現。
+Phase 6-7 の迷走を清算し、Data Key を中心とした一本化された認証・復元フローを確立する。
 
-**依存**: Phase 6 完了（セキュリティ実装確定）
+**依存**: Phase 6 コア完了（crypto.ts / webauthn.ts / auth-session.ts）
 
-### 9.1 初期設定ガイド
-- [ ] 9.1.1 `src/components/SetupGuide.tsx` を新規作成 — ステップバイステップ初期設定ウィザード
-  - Step 1: 概要説明「あんべってなに？」
-  - Step 2: セキュリティ設定説明（WebAuthn / PIN の役割）
-  - Step 3: 最初の名刺スキャン
-  - Step 4: 設定確認（バックアップキー表示）
-- [ ] 9.1.2 Zero-Knowledge 仕様の簡潔な図解
-  - 「どこで暗号化？」→ あなたの端末内
-  - 「キーはどこに？」→ あなたの端末の localStorage
-  - 「サーバーは何を見る？」→ 暗号化済みデータのみ
-- [ ] 9.1.3 SettingsPage に「ガイドを見る」リンク配置
-- [ ] 9.1.4 初回起動時に SetupGuide を自動表示（localStorage フラグで以降非表示）
+### 9.1 階層型 Vault クラス実装
+- [x] `src/lib/vault.ts` 新設 — Level 1/2 による Data Key の Wrap/Unwrap ロジック ✅ 2026-04-17
+  - `generateDataKey()` / `exportDataKey()` / `importDataKey()`
+  - `wrapDataKey(dataKey, wrappingKey)` / `unwrapDataKey(wrapped, wrappingKey)`
+  - `deriveWrappingKeyFromMnemonic(mnemonic)` — Level 2 recovery wrapping key
+  - `saveVaultToSupabase()` / `loadVaultFromSupabase()` — user_vault テーブル連携
+- [ ] 9.1.2 Supabase に `user_vault` テーブルを作成（SQL は design_doc.md Section 5 参照）
+- [ ] 9.1.3 `page.tsx` の `handleWebAuthnAuth` を vault 経由の unwrap に移行
+  - 現在は `encryption_key_wrapped_b64` (localStorage) を直参照 → `loadVaultFromSupabase` + フォールバック
 
-### 9.2 AI 取扱説明書
-- [ ] 9.2.1 `src/components/HelpDocs.tsx` を新規作成 — FAQ + トラブルシューティング
-  - **「セキュリティについて」セクション**
-    - Q: 「私のデータはどこに保存されますか？」
-      → A: すべて暗号化されてクラウドに保存。鍵はあなたの端末にのみ存在
-    - Q: 「pin/生体認証を忘れたらどうなりますか？」
-      → A: 24単語のバックアップキーで復元できます
-    - Q: 「複数の端末で使えますか？」
-      → A: QR コードでペアリングすれば同期できます
-  - **「トラブル解決」セクション**
-    - Q: 「スキャンがうまくいきません」
-      → A: 光の加減を調整し、名刺が真正面に見えるように
-    - Q: 「ロック画面から進めません」
-      → A: WebAuthn/PIN を設定してください
-    - Q: 「データが同期されません」
-      → A: インターネット接続を確認してください
-- [ ] 9.2.2 運用リカバリ手順
-  - 端末紛失時のマスターキー復旧フロー
-  - バックアップキーの安全な保管方法
-  - Supabase ダウン時の代替アクセス方法
-- [ ] 9.2.3 システムの動作原理解説
-  - WebAuthn と PIN の違い
-  - AES-256-GCM 暗号化の基本
-  - Wrapped Key Storage の仕組み
-- [ ] 9.2.4 HelpDocs を SettingsPage に統合（「よくある質問」タブ）
-- [ ] 9.2.5 コンテキスト付きヘルプ（各画面に「？」アイコン）
+### 9.2 顔認証ファースト UI の実装
+- [x] `SecuritySetup.tsx` 刷新 — 24単語確認ゲートを廃止 ✅ 2026-04-17
+  - 「生体認証を有効にする」ボタン1つでセットアップ完了
+  - 登録成功時に `wrapped_data_key_alpha` + `wrapped_data_key_beta` を同時生成
+  - Supabase `user_vault` へ保存（localStorage へも alpha を保持）
+- [x] `LockScreen.tsx` 原点回帰 — biometric / recovery の2モードに簡略化 ✅ 2026-04-17
+  - biometric モード: マウント時に platform 認証を自動起動
+  - 失敗時のみ「リカバリフレーズを使用」リンクを表示
+  - PIN モードを廃止（authenticatorAttachment: 'platform' 固定に準拠）
+- [ ] 9.2.3 SettingsPage に「緊急リカバリ」セクションを追加
+  - `localStorage.getItem('recovery_mnemonic_pending')` を読み込んで24単語を表示
+  - 「バックアップ済み」ボタンで `mnemonic_backed_up = 'true'` をセット
+  - デフォルト折り畳み + Amber/Orange バッジ「端末紛失時のみ使用」
 
-### 9.3 オンボーディング動画 & ビジュアルガイド (Planned)
-- [ ] 9.3.1 初期設定ウィザード → 動画デモ（30秒）
-- [ ] 9.3.2 「生体認証のセットアップ」→ GIF アニメーション表示
-- [ ] 9.3.3 復旧フロー → ステップイメージ表示
+### 9.3 エマージェンシー・リペア導線の構築
+- [x] `LockScreen.tsx` の recovery モード: Supabase vault 経由で wrapped_data_key_beta → Data Key 奪還 ✅ 2026-04-17
+  - Vault 取得失敗時は mnemonic → Data Key 直接導出にフォールバック（旧設計互換）
+- [ ] 9.3.2 SettingsPage「緊急リカバリ」セクション: リカバリフレーズのバックアップ確認 UI
+- [ ] 9.3.3 `?mode=recovery` URL パラメータ経由でロック画面を recovery モードで直接起動
+
+### 9.4 ドキュメント更新
+- [x] `design_doc.md` Section 2.1 — 階層型 Data Key アーキテクチャに全面リライト ✅ 2026-04-17
+- [x] `design_doc.md` Section 2.4 — エマージェンシーリペア導線の更新 ✅ 2026-04-17
+- [x] `design_doc.md` Section 5 — user_vault テーブル定義を追加 ✅ 2026-04-17
+- [x] `ROADMAP.md` Phase 9 を次世代統合フェーズとして再定義 ✅ 2026-04-17
 
 ---

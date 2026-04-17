@@ -1340,6 +1340,177 @@ function BackupKeyDisplay({ userEmail }: { userEmail: string }) {
   );
 }
 
+// ─── Security Backup Section ──────────────────────────────────────────────────
+
+/**
+ * 未バックアップのリカバリフレーズを警告し、保存を促すセクション。
+ * recovery_mnemonic_pending が存在し mnemonic_backed_up が true でない場合のみ表示。
+ */
+function SecurityBackupSection() {
+  const [mounted, setMounted] = useState(false);
+  const [mnemonicPending, setMnemonicPending] = useState('');
+  const [backedUp, setBackedUp] = useState(false);
+  const [showMnemonic, setShowMnemonic] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const pending = localStorage.getItem('recovery_mnemonic_pending') ?? '';
+    const isBackedUp = localStorage.getItem('mnemonic_backed_up') === 'true';
+    setMnemonicPending(pending);
+    setBackedUp(isBackedUp);
+    setMounted(true);
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mnemonicPending).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleConfirm = () => {
+    localStorage.setItem('mnemonic_backed_up', 'true');
+    localStorage.removeItem('recovery_mnemonic_pending');
+    setBackedUp(true);
+    setMnemonicPending('');
+  };
+
+  if (!mounted || !mnemonicPending || backedUp) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        background: 'linear-gradient(150deg, rgba(245,158,11,0.18) 0%, rgba(234,88,12,0.10) 100%)',
+        border: '2px solid rgba(245,158,11,0.55)',
+        borderRadius: '16px',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Warning header */}
+      <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+        <div style={{
+          width: '38px', height: '38px', borderRadius: '12px', flexShrink: 0,
+          background: 'rgba(245,158,11,0.25)', border: '1px solid rgba(245,158,11,0.50)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <AlertTriangleIcon style={{ width: '19px', height: '19px', color: '#fbbf24' }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: '13px', fontWeight: 700, color: '#fde68a', marginBottom: '4px' }}>
+            リカバリフレーズが未保存です
+          </p>
+          <p style={{ fontSize: '11px', color: 'rgba(253,230,138,0.75)', lineHeight: '1.65' }}>
+            端末を紛失した場合、このフレーズがないとデータを復元できません。
+            今すぐ安全な場所に保存してください。
+          </p>
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {!showMnemonic ? (
+          <motion.button
+            whileHover={{ y: -1 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowMnemonic(true)}
+            style={{
+              padding: '11px 16px', borderRadius: '11px', border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.65) 0%, rgba(234,88,12,0.55) 100%)',
+              color: '#fff', fontSize: '13px', fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            }}
+          >
+            <FileText style={{ width: '15px', height: '15px' }} />
+            24単語を表示して保存する
+          </motion.button>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Mnemonic display */}
+            <div style={{
+              background: 'rgba(0,0,0,0.35)',
+              border: '1px solid rgba(245,158,11,0.35)',
+              borderRadius: '10px',
+              padding: '14px',
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              color: '#fde68a',
+              lineHeight: '1.8',
+              wordBreak: 'break-all',
+              userSelect: 'all',
+            }}>
+              {mnemonicPending}
+            </div>
+
+            {/* Copy button */}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleCopy}
+              style={{
+                padding: '9px 14px', borderRadius: '9px', cursor: 'pointer',
+                background: copied ? 'rgba(16,185,129,0.20)' : 'rgba(245,158,11,0.18)',
+                border: copied ? '1px solid rgba(52,211,153,0.40)' : '1px solid rgba(245,158,11,0.40)',
+                color: copied ? '#6ee7b7' : '#fbbf24',
+                fontSize: '12px', fontWeight: 500,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              }}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? 'コピー済み' : 'フレーズをコピー'}
+            </motion.button>
+
+            {/* Confirm checkbox */}
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: '10px',
+              cursor: 'pointer', padding: '10px 12px',
+              background: confirmed ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.04)',
+              border: confirmed ? '1px solid rgba(52,211,153,0.35)' : '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '10px', transition: 'all 0.2s ease',
+            }}>
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10b981' }}
+              />
+              <span style={{ fontSize: '12px', color: confirmed ? '#6ee7b7' : 'rgba(255,255,255,0.55)' }}>
+                24単語を安全な場所に保存しました
+              </span>
+            </label>
+
+            {/* Confirm button — only visible after checkbox */}
+            <AnimatePresence>
+              {confirmed && (
+                <motion.button
+                  key="confirm-btn"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handleConfirm}
+                  style={{
+                    padding: '11px 16px', borderRadius: '11px', border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff', fontSize: '13px', fontWeight: 600,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    boxShadow: '0 4px 20px rgba(16,185,129,0.30)',
+                  }}
+                >
+                  <CheckCircle style={{ width: '15px', height: '15px' }} />
+                  バックアップ完了としてマーク
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 /** Font size selector with segmented control style */
 function FontSizeSelector() {
   // ═══════════════════════════════════════════════════════════════
@@ -1643,6 +1814,9 @@ export function SettingsPage() {
 
       {/* ── Toast ── */}
       {toast && <Toast type={toast.type} message={toast.message} visible={toastVisible} />}
+
+      {/* ═══ 0. Security Backup Warning ═══ */}
+      <SecurityBackupSection />
 
       {/* ═══ 1. Supabase ═══ */}
       <details
