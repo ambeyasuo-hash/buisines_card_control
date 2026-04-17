@@ -179,13 +179,18 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
         );
       }
 
-      // Step 3: WebAuthn credential を登録
-      const result = await registerWebAuthnCredential();
+      // Step 3: Encryption salt を先に生成（WebAuthn の user.id に使うため）
+      // user.id が毎回変わると「別人の鍵」とみなされ保存を拒否されるため、先行生成が必須
+      const encryptionSalt   = crypto.randomUUID();
+      const stableUserId     = new TextEncoder().encode(encryptionSalt); // UUID → Uint8Array
+
+      // Step 4: WebAuthn credential を登録（stableUserId を渡すことで同一ユーザーと認識される）
+      const result = await registerWebAuthnCredential(stableUserId);
       if (!result.success) {
         throw new Error(result.message);
       }
 
-      // Step 4: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
+      // Step 5: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
       const assertion = await assertWebAuthnCredential();
       if (!assertion.success || !assertion.signature) {
         throw new Error(assertion.message || 'WebAuthn assertion に失敗しました');
@@ -193,15 +198,12 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
       const wrappingKeyAlpha = await deriveWrappingKeyFromAssertion(assertion.signature);
       const wrappedAlpha     = await wrapDataKey(dataKey, wrappingKeyAlpha);
 
-      // Step 5: リカバリ wrapping key (Level 2) を生成
+      // Step 6: リカバリ wrapping key (Level 2) を生成
       const recoveryBytes    = crypto.getRandomValues(new Uint8Array(32));
       const recoveryB64      = btoa(String.fromCharCode(...recoveryBytes));
       const recoveryMnemonic = keyB64ToMnemonic(recoveryB64);
       const wrappingKeyBeta  = await deriveWrappingKeyFromMnemonic(recoveryMnemonic);
       const wrappedBeta      = await wrapDataKey(dataKey, wrappingKeyBeta);
-
-      // Step 6: Encryption salt を生成
-      const encryptionSalt = crypto.randomUUID();
 
       // ── ここで AtomicSetupCommit が完成 (型で全フィールド保証) ──
       const commit: AtomicSetupCommit = {

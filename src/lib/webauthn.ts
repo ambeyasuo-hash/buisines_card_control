@@ -107,9 +107,13 @@ export function isSecurityConfigured(): boolean {
 /**
  * WebAuthn Credential の初回登録フロー
  *
- * ユーザーが「生体認証をセットアップ」をタップ時に呼び出す
+ * @param stableUserId  localStorage の encryption_salt (UUID) を Uint8Array 化したもの。
+ *                      同一ユーザーで常に同じ値を渡すことで、ブラウザが「同一人物の鍵」と
+ *                      認識し、既存パスキーの更新ダイアログを正しく表示できる。
  */
-export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult> {
+export async function registerWebAuthnCredential(
+  stableUserId: Uint8Array,
+): Promise<WebAuthnSetupResult> {
   if (!isWebAuthnSupported()) {
     return {
       success: false,
@@ -118,42 +122,59 @@ export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult>
   }
 
   try {
-    // Step 1: Encryption salt（ユーザー固有）を取得 or 生成
-    // TODO: Supabase から encryption_salt を取得、なければ UUID を生成
-    const encryptionSalt = 'placeholder-salt'; // 実装時に Supabase から取得
-
-    // Step 2: Challenge を生成（32 bytes ランダム）
+    // Challenge を生成（32 bytes ランダム）
     const challenge = crypto.getRandomValues(new Uint8Array(32));
 
-    // Step 3: PublicKeyCredential 作成オプションを構築
-    // クロスプラットフォーム対応: authenticatorAttachment を指定しないか 'platform' | 'cross-platform' を許容
+    // 既存の credential ID があれば excludeCredentials に追加
+    // → ブラウザが「既存の鍵を更新しますか？」と正しく表示する
+    const excludeCredentials: PublicKeyCredentialDescriptor[] = [];
+    const existingCredIdB64 = localStorage.getItem(LS_KEYS.credentialId);
+    if (existingCredIdB64) {
+      try {
+        const existingCredIdBytes = Uint8Array.from(
+          atob(existingCredIdB64),
+          (c) => c.charCodeAt(0),
+        );
+        excludeCredentials.push({
+          type: 'public-key',
+          id: existingCredIdBytes,
+          transports: ['internal'],
+        });
+      } catch {
+        // デコード失敗は無視
+      }
+    }
+
+    const rpId = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+
     const creationOptions: PublicKeyCredentialCreationOptions = {
       challenge,
       rp: {
-        name: 'あんべ',
-        id: typeof window !== 'undefined' ? window.location.hostname : 'localhost',
+        name: 'あんべの名刺代わり',
+        id: rpId,
       },
       user: {
-        id: new TextEncoder().encode(encryptionSalt),
-        name: encryptionSalt,
+        // stableUserId = encryption_salt の UTF-8 bytes → 常に同じ値でブラウザが同一ユーザーと認識
+        id: stableUserId.buffer as ArrayBuffer,
+        name: 'ambe-user',
         displayName: 'Ambe User',
       },
       pubKeyCredParams: [
-        { alg: -7, type: 'public-key' }, // ES256
+        { alg: -7,   type: 'public-key' }, // ES256
         { alg: -257, type: 'public-key' }, // RS256
       ],
       authenticatorSelection: {
-        // Platform authenticator 優先: デバイス内蔵の生体認証（FaceID/指紋）を使用
-        // クロスプラットフォーム（外部NFC等）は除外。将来的な拡張は明示的なボタンで対応
         authenticatorAttachment: 'platform',
-        userVerification: 'preferred',
-        residentKey: 'preferred', // ユーザー選択の手間を最小化
+        userVerification: 'required',
+        residentKey: 'required', // デバイス側で鍵を検索可能に（パスキー標準）
       },
+      excludeCredentials,
       attestation: 'none', // プライバシー保護のため attestation 不要
       timeout: 60000,
     };
 
-    // Step 4: credential.create() を呼び出し（OS に委譲）
+    console.log(`[WebAuthn] Registering credential — rpId=${rpId}, excludeCredentials=${excludeCredentials.length}`);
+
     const credential = (await navigator.credentials.create({
       publicKey: creationOptions,
     })) as PublicKeyCredential | null;
@@ -165,15 +186,13 @@ export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult>
       };
     }
 
-    // Step 5: Credential ID と public key を localStorage に保存
-    // credential.id は既に DOMString なため、直接 base64 でエンコード
+    // Credential ID を Base64 で保存（アトミック登録では後で上書きされる場合あり）
     const credentialIdBase64 = typeof credential.id === 'string'
       ? btoa(credential.id)
       : btoa(String.fromCharCode(...new Uint8Array(credential.id as ArrayBuffer)));
     localStorage.setItem(LS_KEYS.credentialId, credentialIdBase64);
     localStorage.setItem(LS_KEYS.enabled, 'true');
 
-    // Step 6: Attestation Object から public key を抽出（registration response より）
     const response = credential.response as AuthenticatorAttestationResponse;
     if (response.attestationObject) {
       try {
@@ -181,7 +200,6 @@ export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult>
         localStorage.setItem(LS_KEYS.publicKeyB64, publicKeyB64);
       } catch (error) {
         console.warn('[WebAuthn] Failed to extract public key from attestation:', error);
-        // Public key 抽出失敗でも registration は続行（fallback: PIN で補完）
       }
     }
 
@@ -191,11 +209,14 @@ export async function registerWebAuthnCredential(): Promise<WebAuthnSetupResult>
       credentialId: credential.id.toString(),
     };
   } catch (error) {
-    console.error('[WebAuthn] Registration error:', error);
-    const msg = parseWebAuthnError(error);
+    // error.name を明示してデバッグを容易に
+    const errName = error instanceof Error ? error.name : 'UnknownError';
+    const errMsg  = error instanceof Error ? error.message : String(error);
+    console.error(`[WebAuthn] Registration FAILED — name=${errName}, message=${errMsg}`, error);
+    const friendlyMsg = parseWebAuthnError(error);
     return {
       success: false,
-      message: `セットアップエラー: ${msg}`,
+      message: `セットアップエラー [${errName}]: ${friendlyMsg}`,
     };
   }
 }
@@ -296,11 +317,13 @@ export async function assertWebAuthnCredential(): Promise<WebAuthnAssertionResul
       clientDataJSON: response.clientDataJSON,
     };
   } catch (error) {
-    console.error('[WebAuthn] Assertion error:', error);
-    const msg = parseWebAuthnError(error);
+    const errName = error instanceof Error ? error.name : 'UnknownError';
+    const errMsg  = error instanceof Error ? error.message : String(error);
+    console.error(`[WebAuthn] Assertion FAILED — name=${errName}, message=${errMsg}`, error);
+    const friendlyMsg = parseWebAuthnError(error);
     return {
       success: false,
-      message: `認証エラー: ${msg}`,
+      message: `認証エラー [${errName}]: ${friendlyMsg}`,
     };
   }
 }
@@ -385,48 +408,47 @@ async function verifyAssertionSignature(
 /**
  * WebAuthn エラーをパースして日本語メッセージに変換
  *
- * @param error WebAuthn API error
- * @returns User-friendly error message (Japanese)
+ * error.name (DOMException の標準名) で分岐する。
+ * message は実装依存・ローカライズ済みで信頼できないため補助として使用。
  */
 function parseWebAuthnError(error: unknown): string {
   if (!(error instanceof Error)) {
     return '不明なエラーが発生しました。';
   }
 
-  const msg = error.message.toLowerCase();
+  switch (error.name) {
+    case 'NotSupportedError':
+      return 'このデバイスは生体認証に対応していません。PIN をご使用ください。';
 
-  // NotSupportedError: デバイスが WebAuthn をサポートしていない
-  if (msg.includes('notsupported') || msg.includes('not supported')) {
-    return 'このデバイスは生体認証に対応していません。';
+    case 'NotAllowedError':
+      return '認証がキャンセルされたか、タイムアウトしました。もう一度お試しください。';
+
+    case 'InvalidStateError':
+      return 'この認証器は既に登録されています。既存の鍵を使って認証してください。';
+
+    case 'SecurityError':
+      return 'セキュリティエラー。HTTPS または localhost でアクセスしてください。';
+
+    case 'NetworkError':
+      return 'ネットワーク接続エラー。インターネット接続を確認してください。';
+
+    case 'UnknownError':
+      return 'デバイス認証器で不明なエラーが発生しました。再試行してください。';
+
+    case 'ConstraintError':
+      return '生体認証の要件を満たしていません（residentKey 非対応の可能性）。';
+
+    case 'AbortError':
+      return '操作が中断されました。';
+
+    default: {
+      // name が標準外の場合は message も参照
+      const msg = error.message.toLowerCase();
+      if (msg.includes('timeout'))   return 'タイムアウトしました。もう一度お試しください。';
+      if (msg.includes('cancelled')) return '認証がキャンセルされました。';
+      return `${error.name}: ${error.message.slice(0, 60)}`;
+    }
   }
-
-  // NotAllowedError: ユーザーがキャンセルまたはタイムアウト
-  if (msg.includes('notallowed') || msg.includes('not allowed') || msg.includes('timeout')) {
-    return '認証がキャンセルされたか、タイムアウトしました。';
-  }
-
-  // InvalidStateError: credential が既に登録されている
-  if (msg.includes('invalidstate') || msg.includes('already')) {
-    return 'この認証器は既に登録されています。';
-  }
-
-  // NetworkError: ネットワーク関連
-  if (msg.includes('network')) {
-    return 'ネットワーク接続エラー。インターネット接続を確認してください。';
-  }
-
-  // SecurityError: HTTPS/localhost 以外でのアクセス
-  if (msg.includes('security') || msg.includes('https')) {
-    return 'セキュリティエラー。HTTPS または localhost でアクセスしてください。';
-  }
-
-  // UnknownUserIDError: 登録済みではない認証器でのアサーション
-  if (msg.includes('unknownuserid')) {
-    return 'この認証器で登録されていません。';
-  }
-
-  // Default: 元のエラーメッセージを返す（先頭部分のみ）
-  return error.message.slice(0, 60);
 }
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────
