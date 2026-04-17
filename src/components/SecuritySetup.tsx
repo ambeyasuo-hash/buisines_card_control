@@ -1,19 +1,20 @@
 'use client';
 
 /**
- * Security Setup Component — Phase 9 (顔認証ファースト)
+ * Security Setup Component — Phase 10+ (アトミック初期設定)
  *
  * 設計思想:
- *   - 24単語の確認ゲートを廃止し、「生体認証を有効にする」ボタン1つで完結
- *   - 登録成功時に Data Key を生成し、wrapped_data_key_alpha/beta を Supabase user_vault へ保存
- *   - リカバリフレーズは Settings → Emergency Recovery で任意のタイミングで確認可能
+ *   - API キー (Supabase/Azure) が設定済みでなければ生体認証登録ボタンを無効化
+ *   - 登録処理は「すべて成功しなければ一切保存しない」アトミック・トランザクション
+ *   - Data Key 生成 → API キー暗号化 → WebAuthn → Recovery → Vault 保存
+ *     の順を一つの try-catch で囲み、失敗時は localStorage を完全ロールバック
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Shield, Smartphone, Lock, CheckCircle, AlertTriangle,
-  Loader, Zap,
+  Loader, Zap, Database, ScanLine, XCircle, RefreshCw,
 } from 'lucide-react';
 import {
   registerWebAuthnCredential,
@@ -21,7 +22,7 @@ import {
   isWebAuthnSupported,
   isWebAuthnEnabled,
 } from '@/lib/webauthn';
-import { deriveWrappingKeyFromAssertion } from '@/lib/crypto';
+import { deriveWrappingKeyFromAssertion, encryptData } from '@/lib/crypto';
 import { getSessionManager } from '@/lib/auth-session';
 import { getOrCreateEncryptionKey, validatePINStrength } from '@/lib/crypto';
 import { keyB64ToMnemonic } from '@/lib/mnemonic';
@@ -35,128 +36,232 @@ import {
 import { ENCRYPTION_LS_KEY } from '@/lib/crypto';
 import { isSupabaseConfigured } from '@/lib/supabase-client';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface SecuritySetupProps {
   onComplete?: () => void;
 }
 
+/** 前提条件の状態 */
+interface Prerequisites {
+  supabase: boolean;  // URL + anon key が有効
+  azure: boolean;     // endpoint + API key が有効
+}
+
+/**
+ * アトミック登録コミット前に全フィールドが揃っていることを型で保証
+ * このオブジェクトが完成するまで localStorage には一切書き込まない
+ */
+interface AtomicSetupCommit {
+  dataKeyB64:               string;         // AES-256-GCM Data Key (raw)
+  wrappedAlpha:             string;         // Data Key wrapped with WebAuthn
+  wrappedBeta:              string;         // Data Key wrapped with recovery mnemonic
+  encryptionSalt:           string;         // Supabase vault 識別子
+  recoveryMnemonic:         string;         // 24-word BIP-39
+  encryptedApiCredentials:  string | null;  // Azure creds encrypted with Data Key
+}
+
+// ─── Prerequisite helpers ──────────────────────────────────────────────────────
+
+function checkPrerequisites(): Prerequisites {
+  try {
+    const supabaseUrl = localStorage.getItem('supabase_url')?.trim() ?? '';
+    const supabaseKey = localStorage.getItem('supabase_anon_key')?.trim() ?? '';
+    const azureEndpoint = localStorage.getItem('azure_ocr_endpoint')?.trim() ?? '';
+    const azureKey = localStorage.getItem('azure_ocr_key')?.trim() ?? '';
+
+    const supabase =
+      supabaseUrl.startsWith('https://') &&
+      supabaseUrl.includes('.supabase.co') &&
+      supabaseKey.startsWith('eyJ') &&
+      supabaseKey.length > 100;
+
+    const azure =
+      azureEndpoint.startsWith('https://') &&
+      (azureEndpoint.includes('.cognitiveservices.azure.com') ||
+       azureEndpoint.includes('api.cognitive.microsoft.com')) &&
+      azureKey.length >= 20;
+
+    return { supabase, azure };
+  } catch {
+    return { supabase: false, azure: false };
+  }
+}
+
+/** localStorage を完全にロールバック（失敗時の安全網） */
+function rollbackLocalStorage(): void {
+  const keys = [
+    ENCRYPTION_LS_KEY,
+    'encryption_key_wrapped_b64',
+    'webauthn_enabled',
+    'webauthn_credential_id',
+    'webauthn_public_key_b64',
+    'encryption_salt',
+    'recovery_mnemonic_pending',
+    'azure_credentials_encrypted',
+    'pin_enabled',
+  ];
+  keys.forEach((k) => localStorage.removeItem(k));
+  console.log('[SecuritySetup] localStorage rolled back');
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function SecuritySetup({ onComplete }: SecuritySetupProps) {
-  const [webAuthnReady, setWebAuthnReady] = useState(false);
+  const [webAuthnReady, setWebAuthnReady]     = useState(false);
   const [webAuthnEnabled, setWebAuthnEnabled] = useState(false);
-  const [pinEnabled, setPinEnabled] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [pinEnabled, setPinEnabled]           = useState(false);
+  const [isRegistering, setIsRegistering]     = useState(false);
   const [registrationMode, setRegistrationMode] = useState<'pin' | null>(null);
-  const [pin, setPin] = useState('');
+  const [pin, setPin]               = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
-  const [showPin, setShowPin] = useState(false);
+  const [showPin, setShowPin]       = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<{
     type: 'success' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
 
+  // 前提条件チェック
+  const [prerequisites, setPrerequisites] = useState<Prerequisites>({ supabase: false, azure: false });
+  const [prereqChecked, setPrereqChecked] = useState(false);
+
+  const refreshPrerequisites = useCallback(() => {
+    const p = checkPrerequisites();
+    setPrerequisites(p);
+    setPrereqChecked(true);
+  }, []);
+
   useEffect(() => {
     setWebAuthnReady(isWebAuthnSupported());
     setWebAuthnEnabled(isWebAuthnEnabled());
     setPinEnabled(localStorage.getItem('pin_enabled') === 'true');
-  }, []);
+    refreshPrerequisites();
 
-  // ── WebAuthn registration (顔認証ファースト) ───────────────────────────────
+    // storage イベントで他タブ/コンポーネントの変更を検知
+    const handleStorage = () => refreshPrerequisites();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [refreshPrerequisites]);
+
+  const allPrerequisitesMet = prerequisites.supabase && prerequisites.azure;
+
+  // ── WebAuthn アトミック登録 ────────────────────────────────────────────────
   const handleWebAuthnRegister = async () => {
-    try {
-      setIsRegistering(true);
-      setRegistrationStatus({ type: null, message: '' });
+    // 前提条件を再チェック（念のため）
+    const p = checkPrerequisites();
+    if (!p.supabase || !p.azure) {
+      setRegistrationStatus({
+        type: 'error',
+        message: 'Supabase と Azure の設定を先に保存してください。',
+      });
+      return;
+    }
 
-      // Step 1: Data Key を生成（または既存を取得）
-      const dataKey = await generateDataKey();
+    setIsRegistering(true);
+    setRegistrationStatus({ type: null, message: '' });
+
+    // ── アトミック・トランザクション開始 ────────────────────────────────────
+    // このブロック内で失敗したら rollbackLocalStorage() を呼ぶ
+    // LocalStorage への書き込みは commit オブジェクト完成後の最後のみ
+    try {
+      // Step 1: Data Key を生成（メモリのみ）
+      const dataKey    = await generateDataKey();
       const dataKeyB64 = await exportDataKey(dataKey);
 
-      // Step 2: WebAuthn credential を登録
+      // Step 2: API キーを Data Key で暗号化（メモリのみ）
+      const azureEndpoint = localStorage.getItem('azure_ocr_endpoint')?.trim() ?? '';
+      const azureApiKey   = localStorage.getItem('azure_ocr_key')?.trim()      ?? '';
+      let encryptedApiCredentials: string | null = null;
+      if (azureEndpoint && azureApiKey) {
+        encryptedApiCredentials = await encryptData(
+          { endpoint: azureEndpoint, apiKey: azureApiKey },
+          dataKey,
+        );
+      }
+
+      // Step 3: WebAuthn credential を登録
       const result = await registerWebAuthnCredential();
       if (!result.success) {
-        setRegistrationStatus({ type: 'error', message: result.message });
-        return;
+        throw new Error(result.message);
       }
 
-      // Step 3: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
+      // Step 4: 直後に assertion で署名を取得 → Level 1 wrapping key を導出
       const assertion = await assertWebAuthnCredential();
-
-      let wrappedAlpha: string | null = null;
-      if (assertion.success && assertion.signature) {
-        const wrappingKeyAlpha = await deriveWrappingKeyFromAssertion(assertion.signature);
-        wrappedAlpha = await wrapDataKey(dataKey, wrappingKeyAlpha);
+      if (!assertion.success || !assertion.signature) {
+        throw new Error(assertion.message || 'WebAuthn assertion に失敗しました');
       }
+      const wrappingKeyAlpha = await deriveWrappingKeyFromAssertion(assertion.signature);
+      const wrappedAlpha     = await wrapDataKey(dataKey, wrappingKeyAlpha);
 
-      // Step 4: リカバリ wrapping key (Level 2) を生成
-      // Data Key とは独立した 32-byte ランダムエントロピー → 24 単語に変換
-      const recoveryBytes = crypto.getRandomValues(new Uint8Array(32));
-      const recoveryB64 = btoa(String.fromCharCode(...recoveryBytes));
+      // Step 5: リカバリ wrapping key (Level 2) を生成
+      const recoveryBytes    = crypto.getRandomValues(new Uint8Array(32));
+      const recoveryB64      = btoa(String.fromCharCode(...recoveryBytes));
       const recoveryMnemonic = keyB64ToMnemonic(recoveryB64);
-      const wrappingKeyBeta = await deriveWrappingKeyFromMnemonic(recoveryMnemonic);
-      const wrappedBeta = await wrapDataKey(dataKey, wrappingKeyBeta);
+      const wrappingKeyBeta  = await deriveWrappingKeyFromMnemonic(recoveryMnemonic);
+      const wrappedBeta      = await wrapDataKey(dataKey, wrappingKeyBeta);
 
-      // Step 5: localStorage に Data Key + wrapped alpha を保存（後方互換）
-      localStorage.setItem(ENCRYPTION_LS_KEY, dataKeyB64);
-      if (wrappedAlpha) {
-        localStorage.setItem('encryption_key_wrapped_b64', wrappedAlpha);
+      // Step 6: Encryption salt を生成
+      const encryptionSalt = crypto.randomUUID();
+
+      // ── ここで AtomicSetupCommit が完成 (型で全フィールド保証) ──
+      const commit: AtomicSetupCommit = {
+        dataKeyB64,
+        wrappedAlpha,
+        wrappedBeta,
+        encryptionSalt,
+        recoveryMnemonic,
+        encryptedApiCredentials,
+      };
+
+      // Step 7: Supabase user_vault へ保存（必須 — 失敗したら throw）
+      await saveVaultToSupabase(
+        {
+          wrapped_data_key_alpha: commit.wrappedAlpha,
+          wrapped_data_key_beta:  commit.wrappedBeta,
+        },
+        commit.encryptionSalt,
+      );
+
+      // Step 8: Supabase 保存成功後にのみ localStorage へコミット（All or Nothing）
+      localStorage.setItem(ENCRYPTION_LS_KEY,                commit.dataKeyB64);
+      localStorage.setItem('encryption_key_wrapped_b64',     commit.wrappedAlpha);
+      localStorage.setItem('webauthn_enabled',               'true');
+      localStorage.setItem('encryption_salt',                commit.encryptionSalt);
+      localStorage.setItem('recovery_mnemonic_pending',      commit.recoveryMnemonic);
+      localStorage.removeItem('mnemonic_backed_up');
+      if (commit.encryptedApiCredentials) {
+        localStorage.setItem('azure_credentials_encrypted',  commit.encryptedApiCredentials);
       }
 
-      // Step 6: リカバリフレーズを pending として保存（Settings で表示可能）
-      localStorage.setItem('recovery_mnemonic_pending', recoveryMnemonic);
-      localStorage.removeItem('mnemonic_backed_up'); // 未バックアップ状態にリセット
+      // Step 9: セッションに Data Key をセット → UNLOCKED
+      const importedKey = await (async () => {
+        const { importKeyFromBase64 } = await import('@/lib/crypto');
+        return importKeyFromBase64(commit.dataKeyB64);
+      })();
+      getSessionManager().setMasterKey(importedKey);
 
-      // Step 7: Supabase user_vault へ保存
-      if (wrappedAlpha) {
-        const encryptionSalt =
-          localStorage.getItem('encryption_salt') || crypto.randomUUID();
-        localStorage.setItem('encryption_salt', encryptionSalt);
-
-        if (isSupabaseConfigured()) {
-          // Supabase 設定済み → 必ず保存（失敗したら登録を中断）
-          try {
-            await saveVaultToSupabase(
-              { wrapped_data_key_alpha: wrappedAlpha, wrapped_data_key_beta: wrappedBeta },
-              encryptionSalt,
-            );
-            console.log('[SecuritySetup] Vault saved to Supabase successfully');
-          } catch (err) {
-            // Vault 保存失敗 → localStorage をロールバックして登録を中断
-            console.error('[SecuritySetup] Vault save failed:', err);
-            localStorage.removeItem(ENCRYPTION_LS_KEY);
-            localStorage.removeItem('encryption_key_wrapped_b64');
-            localStorage.removeItem('webauthn_enabled');
-            localStorage.removeItem('webauthn_credential_id');
-            setRegistrationStatus({
-              type: 'error',
-              message: `Vault への保存に失敗しました。Supabase の接続と RLS ポリシーを確認してください。\n\n${(err as Error).message}\n\n※ Supabase → Authentication → Policies → user_vault に anon INSERT/UPDATE ポリシーが必要です。`,
-            });
-            return;
-          }
-        } else {
-          // Supabase 未設定 → localStorage のみ（後で Supabase 設定後に再登録を促す）
-          console.warn('[SecuritySetup] Supabase not configured — vault stored in localStorage only');
-        }
-      }
-
-      // Step 8: セッションに Data Key をセット → UNLOCKED
-      getSessionManager().setMasterKey(dataKey);
       setWebAuthnEnabled(true);
       setRegistrationStatus({
         type: 'success',
-        message: isSupabaseConfigured()
-          ? '生体認証が登録されました！リカバリフレーズは設定画面で確認できます。'
-          : '生体認証を登録しました。Supabase を設定するとデータが永続化されます。',
+        message: '生体認証が登録されました！設定はすべて暗号化されて Supabase に保存されました。',
       });
       onComplete?.();
+
     } catch (error) {
+      // 失敗時は localStorage を完全ロールバック
+      rollbackLocalStorage();
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[SecuritySetup] Atomic registration failed, rolled back:', msg);
       setRegistrationStatus({
         type: 'error',
-        message: `登録エラー: ${(error as Error).message}`,
+        message: `登録に失敗しました。設定は保存されていません。\n\n${msg}`,
       });
     } finally {
       setIsRegistering(false);
     }
   };
 
-  // ── PIN registration (フォールバック) ─────────────────────────────────────
+  // ── PIN 登録 (フォールバック) ──────────────────────────────────────────────
   const handlePinRegister = async () => {
     try {
       const pinValidation = validatePINStrength(pin);
@@ -198,7 +303,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
     }
   };
 
-  const pinValidation = validatePINStrength(pin);
+  const pinValidation  = validatePINStrength(pin);
   const canRegisterPin = pin.length >= 4 && pin === pinConfirm;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -215,54 +320,75 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
         </div>
       </div>
 
+      {/* ── 前提条件チェックリスト ─────────────────────────────────────────── */}
+      {prereqChecked && !webAuthnEnabled && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`p-4 rounded-xl border space-y-3 ${
+            allPrerequisitesMet
+              ? 'bg-emerald-500/5 border-emerald-500/20'
+              : 'bg-amber-500/8 border-amber-500/25'
+          }`}
+        >
+          <p className="text-xs font-semibold text-white/70 flex items-center gap-2">
+            {allPrerequisitesMet
+              ? <CheckCircle className="w-4 h-4 text-emerald-400" />
+              : <AlertTriangle className="w-4 h-4 text-amber-400" />
+            }
+            {allPrerequisitesMet ? '前提条件 — すべて完了' : '前提条件 — 設定が必要です'}
+          </p>
+
+          <div className="space-y-2">
+            <PrereqRow
+              icon={Database}
+              label="Supabase 接続"
+              ok={prerequisites.supabase}
+              hint="Vault（鍵ストレージ）に必須"
+            />
+            <PrereqRow
+              icon={ScanLine}
+              label="Azure OCR"
+              ok={prerequisites.azure}
+              hint="名刺スキャンに必須"
+            />
+          </div>
+
+          {!allPrerequisitesMet && (
+            <p className="text-xs text-amber-300/80">
+              上記の API キーを「設定を保存」してから戻ってきてください。
+            </p>
+          )}
+
+          {/* 手動リフレッシュ */}
+          <button
+            onClick={refreshPrerequisites}
+            className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" />
+            再確認
+          </button>
+        </motion.div>
+      )}
+
       {/* Status Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`p-4 rounded-xl border transition-colors duration-200 ${
-            webAuthnEnabled
-              ? 'bg-emerald-500/10 border-emerald-500/30'
-              : 'bg-slate-500/10 border-slate-500/30'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Smartphone className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-semibold text-white">生体認証</span>
-          </div>
-          {webAuthnEnabled ? (
-            <div className="flex items-center gap-1">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-emerald-300">設定済み</span>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-300">{webAuthnReady ? '未設定' : '非対応'}</p>
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className={`p-4 rounded-xl border transition-colors duration-200 ${
-            pinEnabled
-              ? 'bg-emerald-500/10 border-emerald-500/30'
-              : 'bg-slate-500/10 border-slate-500/30'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Lock className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-semibold text-white">PIN</span>
-          </div>
-          {pinEnabled ? (
-            <div className="flex items-center gap-1">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-emerald-300">設定済み</span>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-300">未設定</p>
-          )}
-        </motion.div>
+        <StatusCard
+          icon={Smartphone}
+          label="生体認証"
+          enabled={webAuthnEnabled}
+          enabledText="設定済み"
+          disabledText={webAuthnReady ? '未設定' : '非対応'}
+          color="blue"
+        />
+        <StatusCard
+          icon={Lock}
+          label="PIN"
+          enabled={pinEnabled}
+          enabledText="設定済み"
+          disabledText="未設定"
+          color="amber"
+        />
       </div>
 
       {/* Status Message */}
@@ -282,7 +408,7 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
             <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
           )}
           <p
-            className={`text-sm ${
+            className={`text-sm whitespace-pre-line ${
               registrationStatus.type === 'success' ? 'text-emerald-300' : 'text-red-300'
             }`}
           >
@@ -291,38 +417,46 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
         </motion.div>
       )}
 
-      {/* Primary Action: 生体認証を有効にする */}
+      {/* Primary Action */}
       {registrationMode === null && (
         <div className="grid gap-3">
 
-          {/* WebAuthn — primary CTA */}
+          {/* WebAuthn — primary CTA (前提条件が揃うまで disabled) */}
           {webAuthnReady && !webAuthnEnabled && (
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleWebAuthnRegister}
-              disabled={isRegistering}
-              className="w-full flex items-center justify-center gap-3 py-4 rounded-xl
-                         bg-gradient-to-r from-blue-500 to-cyan-400 text-white
-                         font-semibold transition-all duration-300
-                         disabled:opacity-50 disabled:cursor-not-allowed
-                         hover:from-blue-600 hover:to-cyan-500
-                         shadow-lg shadow-blue-500/20"
-            >
-              {isRegistering ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  登録中...
-                </>
-              ) : (
-                <>
-                  <Zap className="w-5 h-5" />
-                  生体認証を有効にする
-                </>
+            <div className="relative">
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={allPrerequisitesMet && !isRegistering ? { scale: 1.02, y: -2 } : {}}
+                whileTap={allPrerequisitesMet && !isRegistering ? { scale: 0.98 } : {}}
+                onClick={handleWebAuthnRegister}
+                disabled={isRegistering || !allPrerequisitesMet}
+                className={`w-full flex items-center justify-center gap-3 py-4 rounded-xl
+                           font-semibold transition-all duration-300
+                           ${allPrerequisitesMet
+                             ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white hover:from-blue-600 hover:to-cyan-500 shadow-lg shadow-blue-500/20'
+                             : 'bg-slate-700/50 text-white/40 cursor-not-allowed border border-slate-600/30'
+                           }
+                           disabled:opacity-60 disabled:cursor-not-allowed`}
+              >
+                {isRegistering ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    登録中...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-5 h-5" />
+                    生体認証を有効にする
+                  </>
+                )}
+              </motion.button>
+              {!allPrerequisitesMet && (
+                <p className="text-center text-xs text-amber-400/70 mt-2">
+                  ↑ 上記の前提条件を満たすと有効になります
+                </p>
               )}
-            </motion.button>
+            </div>
           )}
 
           {/* PIN fallback */}
@@ -361,7 +495,6 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
             </div>
           )}
 
-          {/* No biometric + no PIN */}
           {!webAuthnReady && !pinEnabled && (
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
               <p className="text-xs text-amber-300">
@@ -464,5 +597,67 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
         </motion.div>
       )}
     </div>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function PrereqRow({
+  icon: Icon, label, ok, hint,
+}: {
+  icon: React.ElementType;
+  label: string;
+  ok: boolean;
+  hint: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Icon className={`w-4 h-4 flex-shrink-0 ${ok ? 'text-emerald-400' : 'text-amber-400'}`} />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-white">{label}</p>
+        <p className="text-xs text-white/40">{hint}</p>
+      </div>
+      {ok
+        ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+        : <XCircle    className="w-4 h-4 text-amber-400  flex-shrink-0" />
+      }
+    </div>
+  );
+}
+
+function StatusCard({
+  icon: Icon, label, enabled, enabledText, disabledText, color,
+}: {
+  icon: React.ElementType;
+  label: string;
+  enabled: boolean;
+  enabledText: string;
+  disabledText: string;
+  color: 'blue' | 'amber';
+}) {
+  const colorMap = {
+    blue:  { icon: 'text-blue-400',  card: enabled ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-500/10 border-slate-500/30' },
+    amber: { icon: 'text-amber-400', card: enabled ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-500/10 border-slate-500/30' },
+  }[color];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`p-4 rounded-xl border transition-colors duration-200 ${colorMap.card}`}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={`w-4 h-4 ${colorMap.icon}`} />
+        <span className="text-xs font-semibold text-white">{label}</span>
+      </div>
+      {enabled ? (
+        <div className="flex items-center gap-1">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <span className="text-xs text-emerald-300">{enabledText}</span>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-300">{disabledText}</p>
+      )}
+    </motion.div>
   );
 }

@@ -1791,6 +1791,11 @@ export function SettingsPage() {
         }
       } else if (!endpoint || !apiKey) {
         localStorage.removeItem('azure_credentials_encrypted');
+      } else {
+        // LOCKED 状態で Azure キーを変更した → 再認証後に自動暗号化が必要
+        showToast('error', '⚠️ 生体認証でロック解除後に再保存すると、APIキーが暗号化されます');
+        setHasChanges(false);
+        return;
       }
 
       showToast('success', '設定を更新・確認しました');

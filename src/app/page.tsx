@@ -146,7 +146,20 @@ export default function Home() {
           setShowSetupPrompt(true);
           setSessionState('UNLOCKED');
         } else {
-          setSessionState(manager.getState());
+          // Vault は存在する — API 認証情報の有無も確認（アトミックセットアップの完全性チェック）
+          const hasEncryptedCreds = !!localStorage.getItem('azure_credentials_encrypted');
+          const hasPlaintextCreds =
+            !!localStorage.getItem('azure_endpoint') && !!localStorage.getItem('azure_key');
+
+          if (!hasEncryptedCreds && !hasPlaintextCreds) {
+            // Vault はあるが API 設定が未保存 → セットアップ未完了とみなす
+            console.warn('[Home] Vault exists but Azure credentials missing — setup incomplete, directing to re-setup');
+            setSecurityConfigured(false);
+            setShowSetupPrompt(true);
+            setSessionState('UNLOCKED');
+          } else {
+            setSessionState(manager.getState());
+          }
         }
       } catch (err) {
         // Vault チェック失敗（ネットワーク等）→ 通常のロック画面で続行
