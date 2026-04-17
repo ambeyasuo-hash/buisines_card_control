@@ -171,6 +171,72 @@ function mapBusinessCardFields(fields: BcFields): OcrResult {
   };
 }
 
+// ─── Error Classifier ─────────────────────────────────────────────────────────
+
+/**
+ * fetch が throw した Error を「ユーザーへの日本語アドバイス付きカテゴリ」に分類する
+ *
+ * ユーザーが「次にとるべき行動」を明示するのが目的。
+ * 技術的な error.name / message はコンソールにのみ残す。
+ */
+function classifyFetchError(err: unknown): string {
+  const name    = err instanceof Error ? err.name    : '';
+  const message = err instanceof Error ? err.message.toLowerCase() : '';
+
+  // TypeError: Load failed (Safari/iOS) / TypeError: fetch failed (Node) / Failed to fetch (Chrome)
+  // → URL 形式の誤りやネットワーク到達不能が原因
+  if (
+    name === 'TypeError' ||
+    message.includes('load failed') ||
+    message.includes('fetch failed') ||
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('network error')
+  ) {
+    return (
+      'Azure エンドポイントへの接続に失敗しました。\n\n' +
+      '以下を確認してください:\n' +
+      '① 設定画面のエンドポイント URL が正しい形式か\n' +
+      '   例: https://your-name.cognitiveservices.azure.com\n' +
+      '② インターネット接続が正常か\n' +
+      '③ Azure リソースが削除・停止されていないか'
+    );
+  }
+
+  if (name === 'AbortError' || message.includes('abort') || message.includes('timeout')) {
+    return (
+      'Azure への接続がタイムアウトしました。\n\n' +
+      'しばらく待ってから再試行してください。\n' +
+      '繰り返す場合はインターネット接続を確認してください。'
+    );
+  }
+
+  return '予期しないネットワークエラーが発生しました。しばらく後に再試行してください。';
+}
+
+/**
+ * Azure polling 中の analysis failure をユーザー向けメッセージにマッピング
+ *
+ * "光の反射" や "撮影のコツ" を示す Elegant Resilience ガイダンス。
+ */
+function classifyAnalysisFailure(mode: 'front' | 'back'): string {
+  if (mode === 'back') {
+    return (
+      '裏面のテキストを読み取れませんでした。\n\n' +
+      '① 文字が正面に向くように角度を調整してください\n' +
+      '② 光の反射を避けて撮影してください\n' +
+      '③ 手ブレのないよう端末を固定してください'
+    );
+  }
+  return (
+    '名刺として認識できませんでした。\n\n' +
+    '撮影のコツ:\n' +
+    '① 光の反射を抑え、明るい場所で撮影してください\n' +
+    '② 名刺全体がガイド枠に収まるようにしてください\n' +
+    '③ 文字がはっきり見える距離・角度で撮影してください'
+  );
+}
+
 // ─── Azure Polling ────────────────────────────────────────────────────────────
 
 /** ポーリング — 表面 (prebuilt-businessCard → OcrResult) */
@@ -181,22 +247,22 @@ async function pollFront(operationUrl: string, apiKey: string): Promise<OcrResul
     const res = await fetch(operationUrl, {
       headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     });
-    if (!res.ok) throw new Error(`ポーリング失敗: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`POLL_HTTP_${res.status}`);
 
     const data = await res.json() as {
       status: string;
       analyzeResult?: { documents?: Array<{ fields?: BcFields }> };
     };
 
-    if (data.status === 'failed') throw new Error('Azure の解析に失敗しました');
+    if (data.status === 'failed') throw new Error('ANALYSIS_FAILED');
     if (data.status === 'succeeded') {
       const fields = data.analyzeResult?.documents?.[0]?.fields;
-      if (!fields) throw new Error('名刺フィールドの取得に失敗しました');
+      if (!fields) throw new Error('EMPTY_FIELDS');
       return mapBusinessCardFields(fields);
     }
     // running / notStarted → 次のループへ
   }
-  throw new Error('タイムアウト: Azure が 30 秒以内に結果を返しませんでした');
+  throw new Error('POLL_TIMEOUT');
 }
 
 /** ポーリング — 裏面 (prebuilt-read → 検索用テキスト) */
@@ -207,19 +273,17 @@ async function pollBack(operationUrl: string, apiKey: string): Promise<string> {
     const res = await fetch(operationUrl, {
       headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     });
-    if (!res.ok) throw new Error(`ポーリング失敗: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`POLL_HTTP_${res.status}`);
 
     const data = await res.json() as {
       status: string;
       analyzeResult?: ReadAnalyzeResult;
     };
 
-    if (data.status === 'failed') throw new Error('裏面の解析に失敗しました');
+    if (data.status === 'failed') throw new Error('ANALYSIS_FAILED');
     if (data.status === 'succeeded') {
       const ar = data.analyzeResult;
-      // content フィールド優先 (新 Document Intelligence 形式)
       if (ar?.content?.trim()) return ar.content.trim();
-      // pages[].lines[] フォールバック (旧 Form Recognizer 形式)
       const lines: string[] = [];
       for (const page of ar?.pages ?? []) {
         for (const line of page.lines ?? []) {
@@ -229,7 +293,30 @@ async function pollBack(operationUrl: string, apiKey: string): Promise<string> {
       return lines.join('\n');
     }
   }
-  throw new Error('タイムアウト: Azure が 30 秒以内に結果を返しませんでした');
+  throw new Error('POLL_TIMEOUT');
+}
+
+/**
+ * polling / analysis のエラーコードをユーザー向けメッセージに変換
+ */
+function mapPollError(err: unknown, mode: 'front' | 'back'): string {
+  const msg = err instanceof Error ? err.message : '';
+
+  if (msg === 'ANALYSIS_FAILED' || msg === 'EMPTY_FIELDS') {
+    return classifyAnalysisFailure(mode);
+  }
+  if (msg === 'POLL_TIMEOUT') {
+    return (
+      'Azure の解析に時間がかかりすぎています（30秒超過）。\n\n' +
+      'ネットワーク状態を確認してから再試行してください。'
+    );
+  }
+  if (msg.startsWith('POLL_HTTP_')) {
+    const code = msg.replace('POLL_HTTP_', '');
+    return `解析結果の取得に失敗しました（HTTP ${code}）。しばらく後に再試行してください。`;
+  }
+  // TypeError などのネットワーク系
+  return classifyFetchError(err);
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -284,16 +371,28 @@ export async function POST(request: Request): Promise<Response> {
 
     let submitRes: Response | null = null;
     let lastStatus = 0;
+    let fetchError: unknown = null;
 
     for (const analyzeUrl of analyzePaths) {
-      const res = await fetch(analyzeUrl, {
-        method: 'POST',
-        headers: {
-          'Ocp-Apim-Subscription-Key': apiKey,
-          'Content-Type': 'image/jpeg',
-        },
-        body: imageBuffer,
-      });
+      let res: Response;
+      try {
+        res = await fetch(analyzeUrl, {
+          method: 'POST',
+          headers: {
+            'Ocp-Apim-Subscription-Key': apiKey,
+            'Content-Type': 'image/jpeg',
+          },
+          body: imageBuffer,
+        });
+      } catch (err) {
+        // TypeError: Load failed (iOS Safari) / TypeError: fetch failed (Node.js)
+        // → URL が到達不能 or DNS 解決失敗。次パスを試しても同じなので即座に返す
+        const errName = err instanceof Error ? err.name : 'unknown';
+        const errMsg  = err instanceof Error ? err.message : String(err);
+        console.error(`[Azure/analyze] fetch threw [${errName}]: ${errMsg} — url: ${analyzeUrl}`);
+        fetchError = err;
+        break; // 両パスとも同じ原因で失敗するため continue しない
+      }
 
       lastStatus = res.status;
 
@@ -301,7 +400,9 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json(
           {
             ok: false,
-            error: 'API Key が無効です。\n\n設定画面で Azure の API Key を確認してください。',
+            error:
+              'API キーが無効または期限切れです。\n\n' +
+              '設定画面で Azure の API キーをコピーし直して保存してください。',
           } as AnalyzeResponse,
           { status: 200 },
         );
@@ -311,44 +412,70 @@ export async function POST(request: Request): Promise<Response> {
         submitRes = res;
         break;
       }
+      // 404 → 次のパスへ
+    }
+
+    // fetch 自体が TypeError で失敗した場合
+    if (fetchError !== null) {
+      return Response.json(
+        { ok: false, error: classifyFetchError(fetchError) } as AnalyzeResponse,
+        { status: 200 },
+      );
     }
 
     if (!submitRes || !submitRes.ok) {
-      return Response.json(
-        {
-          ok: false,
-          error:
-            lastStatus === 404
-              ? 'Azure のエンドポイントが見つかりません。\n\n設定画面でエンドポイント URL を確認してください。'
-              : `Azure へのリクエストに失敗しました（HTTP ${lastStatus}）`,
-        } as AnalyzeResponse,
-        { status: 200 },
-      );
+      const errMsg =
+        lastStatus === 404
+          ? 'Azure のエンドポイントが見つかりません。\n\n' +
+            '設定画面でエンドポイント URL を確認してください。\n' +
+            '例: https://your-name.cognitiveservices.azure.com'
+          : `Azure へのリクエストに失敗しました（HTTP ${lastStatus}）。しばらく後に再試行してください。`;
+      return Response.json({ ok: false, error: errMsg } as AnalyzeResponse, { status: 200 });
     }
 
     const operationUrl = submitRes.headers.get('Operation-Location');
     if (!operationUrl) {
       return Response.json(
-        { ok: false, error: 'Azure からの応答に Operation-Location がありません' } as AnalyzeResponse,
+        {
+          ok: false,
+          error:
+            'Azure からの応答が不正です（Operation-Location ヘッダーがありません）。\n\n' +
+            'エンドポイントのリージョンが設定画面と一致しているか確認してください。',
+        } as AnalyzeResponse,
         { status: 200 },
       );
     }
 
     // ── Step 3: ポーリング & 結果返却 ─────────────────────────────────────────
-    if (mode === 'back') {
-      const notes = await pollBack(operationUrl, apiKey);
-      return Response.json({ ok: true, notes } as AnalyzeResponse, { status: 200 });
+    try {
+      if (mode === 'back') {
+        const notes = await pollBack(operationUrl, apiKey);
+        return Response.json({ ok: true, notes } as AnalyzeResponse, { status: 200 });
+      }
+      const result = await pollFront(operationUrl, apiKey);
+      return Response.json({ ok: true, result } as AnalyzeResponse, { status: 200 });
+    } catch (pollErr) {
+      const errName = pollErr instanceof Error ? pollErr.name : 'unknown';
+      const errMsg  = pollErr instanceof Error ? pollErr.message : String(pollErr);
+      console.error(`[Azure/analyze] polling failed [${errName}]: ${errMsg}`);
+      return Response.json(
+        { ok: false, error: mapPollError(pollErr, mode) } as AnalyzeResponse,
+        { status: 200 },
+      );
     }
 
-    const result = await pollFront(operationUrl, apiKey);
-    return Response.json({ ok: true, result } as AnalyzeResponse, { status: 200 });
-
   } catch (err) {
-    const error = err as Error;
+    // 画像前処理 (sharp) などのエラーを捕捉
+    const errName = err instanceof Error ? err.name : 'unknown';
+    const errMsg  = err instanceof Error ? err.message : String(err);
+    console.error(`[Azure/analyze] unexpected error [${errName}]: ${errMsg}`);
     return Response.json(
       {
         ok: false,
-        error: '名刺の読み取り中にエラーが発生しました。\n\n光の反射を抑えて、もう少し近づいて撮影してみてください。',
+        error:
+          '画像の処理中にエラーが発生しました。\n\n' +
+          '別の角度や明るさで撮影し直してください。\n' +
+          '問題が続く場合はアプリを再起動してください。',
       } as AnalyzeResponse,
       { status: 200 },
     );

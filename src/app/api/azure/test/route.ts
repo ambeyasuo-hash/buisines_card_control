@@ -255,9 +255,29 @@ export async function POST(request: Request): Promise<Response> {
         const errorMsg = responseText.substring(0, 300);
         continue;
       } catch (err) {
-        const error = err as Error;
-        console.log(`[Azure Test] Error: ${error.message}`);
-        // Continue to next path
+        const errName = err instanceof Error ? err.name    : 'UnknownError';
+        const errMsg  = err instanceof Error ? err.message : String(err);
+        console.error(`[Azure Test] fetch threw [${errName}]: ${errMsg} — path: ${apiPath}`);
+
+        // TypeError: Load failed (Safari/iOS) / fetch failed (Node) — 接続不能
+        if (errName === 'TypeError') {
+          return Response.json(
+            {
+              ok: false,
+              message:
+                'Azure エンドポイントへの接続に失敗しました（TypeError: Load failed）。\n\n' +
+                '以下を確認してください:\n' +
+                '① エンドポイント URL の形式\n' +
+                '   正: https://your-name.cognitiveservices.azure.com\n' +
+                '   誤: IPアドレス、末尾スラッシュ付き、http:// など\n' +
+                '② インターネット接続が正常か\n' +
+                '③ Azure リソースが有効（削除・停止されていない）か',
+              code: 'LOAD_FAILED',
+            } as TestResponse,
+            { status: 200 }
+          );
+        }
+        // その他のエラーは次のパスへ
         continue;
       }
     }
@@ -271,10 +291,10 @@ export async function POST(request: Request): Promise<Response> {
         {
           ok: false,
           message:
-            'Azure エンドポイント が見つかりません。\n\n' +
+            'Azure エンドポイントのパスが見つかりません (404)。\n\n' +
             'エンドポイント URL を確認してください:\n' +
-            `${endpoint}/\n\n` +
-            '（末尾の / は自動的に削除されます）',
+            `  ${endpoint}\n\n` +
+            'リソース名（your-name 部分）が正しいか Azure Portal で確認してください。',
           code: 'PATH_NOT_FOUND',
           debug: `Last status: ${lastStatus}`,
         } as TestResponse,
@@ -287,11 +307,12 @@ export async function POST(request: Request): Promise<Response> {
         {
           ok: false,
           message:
-            'エンドポイント への接続に失敗しました。\n\n' +
+            'Azure エンドポイントへの接続に失敗しました。\n\n' +
             '以下を確認してください:\n' +
-            '1. エンドポイント URL が正しい\n' +
-            '2. インターネット接続がある\n' +
-            '3. Azure ファイアウォール設定を確認',
+            '① エンドポイント URL の形式が正しいか\n' +
+            '   例: https://your-name.cognitiveservices.azure.com\n' +
+            '② インターネット接続が正常か\n' +
+            '③ Azure リソースが有効（削除・停止されていない）か',
           code: 'NETWORK_ERROR',
         } as TestResponse,
         { status: 200 }
@@ -302,22 +323,24 @@ export async function POST(request: Request): Promise<Response> {
       {
         ok: false,
         message:
-          `Azure への リクエストが失敗しました。\n\n` +
-          `ステータス: ${lastStatus}\n\n` +
+          `Azure へのリクエストが失敗しました（HTTP ${lastStatus}）。\n\n` +
           (lastErrorBody ? `エラー詳細:\n${lastErrorBody.substring(0, 300)}` : 'エラー詳細なし'),
         code: `HTTP_${lastStatus}`,
       } as TestResponse,
       { status: 200 }
     );
   } catch (err) {
-    const error = err as Error;
-    console.log('[Azure Test] Unexpected error:', error.message);
+    const errName = err instanceof Error ? err.name    : 'UnknownError';
+    const errMsg  = err instanceof Error ? err.message : String(err);
+    console.error(`[Azure Test] Unexpected error [${errName}]: ${errMsg}`);
 
     return Response.json(
       {
         ok: false,
-        message: `エラー: ${error.message}`,
-        code: 'UNKNOWN_ERROR',
+        message:
+          '予期しないエラーが発生しました。\n\n' +
+          'エンドポイントと API キーを確認してから再試行してください。',
+        code: errName,
       } as TestResponse,
       { status: 200 }
     );
