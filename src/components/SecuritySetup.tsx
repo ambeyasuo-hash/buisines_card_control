@@ -33,6 +33,7 @@ import {
   saveVaultToSupabase,
 } from '@/lib/vault';
 import { ENCRYPTION_LS_KEY } from '@/lib/crypto';
+import { isSupabaseConfigured } from '@/lib/supabase-client';
 
 interface SecuritySetupProps {
   onComplete?: () => void;
@@ -102,25 +103,48 @@ export function SecuritySetup({ onComplete }: SecuritySetupProps) {
       localStorage.setItem('recovery_mnemonic_pending', recoveryMnemonic);
       localStorage.removeItem('mnemonic_backed_up'); // 未バックアップ状態にリセット
 
-      // Step 7: Supabase user_vault へ保存（best-effort）
+      // Step 7: Supabase user_vault へ保存
       if (wrappedAlpha) {
         const encryptionSalt =
           localStorage.getItem('encryption_salt') || crypto.randomUUID();
         localStorage.setItem('encryption_salt', encryptionSalt);
-        try {
-          await saveVaultToSupabase(
-            { wrapped_data_key_alpha: wrappedAlpha, wrapped_data_key_beta: wrappedBeta },
-            encryptionSalt,
-          );
-        } catch (err) {
-          console.warn('[SecuritySetup] Supabase vault save failed (localStorage fallback active):', err);
+
+        if (isSupabaseConfigured()) {
+          // Supabase 設定済み → 必ず保存（失敗したら登録を中断）
+          try {
+            await saveVaultToSupabase(
+              { wrapped_data_key_alpha: wrappedAlpha, wrapped_data_key_beta: wrappedBeta },
+              encryptionSalt,
+            );
+            console.log('[SecuritySetup] Vault saved to Supabase successfully');
+          } catch (err) {
+            // Vault 保存失敗 → localStorage をロールバックして登録を中断
+            console.error('[SecuritySetup] Vault save failed:', err);
+            localStorage.removeItem(ENCRYPTION_LS_KEY);
+            localStorage.removeItem('encryption_key_wrapped_b64');
+            localStorage.removeItem('webauthn_enabled');
+            localStorage.removeItem('webauthn_credential_id');
+            setRegistrationStatus({
+              type: 'error',
+              message: `Vault への保存に失敗しました。Supabase の接続と RLS ポリシーを確認してください。\n\n${(err as Error).message}\n\n※ Supabase → Authentication → Policies → user_vault に anon INSERT/UPDATE ポリシーが必要です。`,
+            });
+            return;
+          }
+        } else {
+          // Supabase 未設定 → localStorage のみ（後で Supabase 設定後に再登録を促す）
+          console.warn('[SecuritySetup] Supabase not configured — vault stored in localStorage only');
         }
       }
 
       // Step 8: セッションに Data Key をセット → UNLOCKED
       getSessionManager().setMasterKey(dataKey);
       setWebAuthnEnabled(true);
-      setRegistrationStatus({ type: 'success', message: '生体認証が登録されました！リカバリフレーズは設定画面で確認できます。' });
+      setRegistrationStatus({
+        type: 'success',
+        message: isSupabaseConfigured()
+          ? '生体認証が登録されました！リカバリフレーズは設定画面で確認できます。'
+          : '生体認証を登録しました。Supabase を設定するとデータが永続化されます。',
+      });
       onComplete?.();
     } catch (error) {
       setRegistrationStatus({

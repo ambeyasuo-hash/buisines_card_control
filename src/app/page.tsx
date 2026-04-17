@@ -15,6 +15,7 @@ import { getSessionManager, initializeSession, type SessionState } from '@/lib/a
 import { assertWebAuthnCredential, isSecurityConfigured } from '@/lib/webauthn';
 import { deriveWrappingKeyFromAssertion, unwrapMasterKey } from '@/lib/crypto';
 import { loadVaultFromSupabase, unwrapDataKey } from '@/lib/vault';
+import { isSupabaseConfigured } from '@/lib/supabase-client';
 
 type ActiveTab = 'dashboard' | 'identity' | 'list' | 'rescue';
 
@@ -91,35 +92,72 @@ export default function Home() {
   const [securityConfigured, setSecurityConfigured] = useState(false);
   const [showSetupPrompt, setShowSetupPrompt] = useState(false);
   const [forceRecoveryMode, setForceRecoveryMode] = useState(false);
+  const [vaultIntegrityChecking, setVaultIntegrityChecking] = useState(true);
 
   // Initialize session & check security configuration
   useEffect(() => {
     initializeSession();
     const manager = getSessionManager();
 
-    // Check if we should skip lock screen (setup flow bypass)
-    const shouldSkipLock = manager.consumeSkipLockFlag();
-
-    // Check if security (WebAuthn/PIN) is configured
-    const configured = isSecurityConfigured();
-    setSecurityConfigured(configured);
-
-    // If not configured, show setup prompt
-    if (!configured) {
-      setShowSetupPrompt(true);
-      // Skip lock screen and go directly to dashboard
-      setSessionState('UNLOCKED');
-    } else if (shouldSkipLock) {
-      // Setup flow: skip lock screen for initial registration
-      setSessionState('UNLOCKED');
-    } else {
-      setSessionState(manager.getState());
-    }
-
     const unsubscribe = manager.onStateChange((newState) => {
       setSessionState(newState);
     });
 
+    // Check if we should skip lock screen (setup flow bypass)
+    const shouldSkipLock = manager.consumeSkipLockFlag();
+
+    // Check if security (WebAuthn/PIN) is configured via localStorage flags
+    const configured = isSecurityConfigured();
+    setSecurityConfigured(configured);
+
+    if (!configured) {
+      // セキュリティ未設定 → セットアッププロンプトを表示
+      setShowSetupPrompt(true);
+      setSessionState('UNLOCKED');
+      setVaultIntegrityChecking(false);
+      return unsubscribe;
+    }
+
+    if (shouldSkipLock) {
+      // セットアップフロー直後のスキップ
+      setSessionState('UNLOCKED');
+      setVaultIntegrityChecking(false);
+      return unsubscribe;
+    }
+
+    // 非同期: Vault 整合性チェック
+    // localStorage フラグあり でも Supabase vault が空の場合は再設定へ誘導
+    const checkVaultIntegrity = async () => {
+      try {
+        const encryptionSalt = localStorage.getItem('encryption_salt');
+        const supabaseReady  = isSupabaseConfigured();
+
+        if (!encryptionSalt || !supabaseReady) {
+          // salt なし or Supabase 未設定 → 通常のロック画面へ
+          setSessionState(manager.getState());
+          return;
+        }
+
+        const vault = await loadVaultFromSupabase(encryptionSalt);
+        if (!vault?.wrapped_data_key_alpha) {
+          // Vault が空 → localStorage フラグがあってもセキュリティ設定がない状態
+          console.warn('[Home] Vault empty in Supabase — directing to re-setup');
+          setSecurityConfigured(false);
+          setShowSetupPrompt(true);
+          setSessionState('UNLOCKED');
+        } else {
+          setSessionState(manager.getState());
+        }
+      } catch (err) {
+        // Vault チェック失敗（ネットワーク等）→ 通常のロック画面で続行
+        console.warn('[Home] Vault integrity check failed (proceeding with LOCKED):', err);
+        setSessionState(manager.getState());
+      } finally {
+        setVaultIntegrityChecking(false);
+      }
+    };
+
+    checkVaultIntegrity();
     return unsubscribe;
   }, []);
 
@@ -228,6 +266,18 @@ export default function Home() {
     manager.lock();
     setActiveTab('dashboard');
   };
+
+  // Vault 整合性チェック中はローディング表示
+  if (vaultIntegrityChecking) {
+    return (
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-xs text-muted-foreground">セキュリティを確認中...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Lock Screen overlay - show if security is configured AND session is locked
   // OR if ?mode=recovery is set (force recovery mode access)

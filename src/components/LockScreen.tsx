@@ -42,12 +42,23 @@ export function LockScreen({
   const [mode, setMode] = useState<'biometric' | 'recovery'>('biometric');
   const [localError, setLocalError] = useState<string | null>(error || null);
   const [authFailed, setAuthFailed] = useState(false);
+  /** パスキーがこのデバイスに存在しない（別端末で登録、または vault 空）*/
+  const [passkeyNotFound, setPasskeyNotFound] = useState(false);
 
   // ── Recovery state ────────────────────────────────────────────────────────
   const [recoveryPhrase, setRecoveryPhrase] = useState('');
   const [isRecovering, setIsRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [recoverySuccess, setRecoverySuccess] = useState(false);
+
+  // error prop が変わったとき、パスキー未発見を判定
+  useEffect(() => {
+    if (error && isPasskeyNotFoundError(error)) {
+      setPasskeyNotFound(true);
+      setAuthFailed(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   // マウント時に platform 認証を自動起動
   useEffect(() => {
@@ -56,20 +67,32 @@ export function LockScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** パスキー未発見を示すエラーパターン */
+  const isPasskeyNotFoundError = (msg: string) =>
+    msg.includes('Credential が見つかりません') ||
+    msg.includes('Wrapped master key not found') ||
+    msg.includes('Please register again') ||
+    msg.includes('not found') ||
+    msg.includes('WebAuthn が有効化されていません');
+
   const triggerBiometric = async () => {
     setLocalError(null);
     setAuthFailed(false);
+    setPasskeyNotFound(false);
     try {
       const success = await onAuthenticateWebAuthn();
       if (!success) {
         setAuthFailed(true);
-        setLocalError('生体認証に失敗しました。');
+        // error prop に詳細メッセージが設定される（page.tsx の authError）
       }
     } catch (e) {
       setAuthFailed(true);
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('NotAllowed') || msg.includes('Timeout')) {
         setLocalError('生体認証がキャンセル / タイムアウトしました。');
+      } else if (isPasskeyNotFoundError(msg)) {
+        setPasskeyNotFound(true);
+        setLocalError(null);
       } else {
         setLocalError('生体認証に失敗しました。');
       }
@@ -228,8 +251,52 @@ export function LockScreen({
               ) : '認証'}
             </motion.button>
 
-            {/* リカバリリンク: 失敗後のみ表示 */}
-            {authFailed && (
+            {/* パスキー未発見の専用案内 */}
+            {passkeyNotFound && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-300 leading-relaxed">
+                    このデバイスには登録済みの鍵がありません。
+                    別のデバイスで登録した場合は<strong>リカバリフレーズ</strong>で復元するか、再設定してください。
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setMode('recovery');
+                      setLocalError(null);
+                      setPasskeyNotFound(false);
+                      setRecoveryPhrase('');
+                      setRecoveryError(null);
+                      setRecoverySuccess(false);
+                    }}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-violet-400
+                               text-white font-semibold text-sm flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    リカバリフレーズで復元
+                  </motion.button>
+                  {onResetSession && (
+                    <button
+                      onClick={onResetSession}
+                      className="w-full py-2 text-xs text-red-400 hover:text-red-300 underline transition-colors"
+                    >
+                      セットアップをリセット（全データ消去）
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* リカバリリンク: 失敗後のみ表示（パスキー未発見以外の失敗） */}
+            {authFailed && !passkeyNotFound && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

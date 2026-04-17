@@ -124,13 +124,28 @@ export interface UserVaultEntry {
  * user_vault テーブルに wrapped keys を保存 (upsert by encryption_salt)
  *
  * Zero-Knowledge: サーバーは wrapped (暗号化済み) key のみ受け取る。
+ *
+ * RLS デバッグ:
+ *   - user_vault に anon INSERT/UPDATE ポリシーが必要
+ *   - Supabase Dashboard → Authentication → Policies で確認
  */
 export async function saveVaultToSupabase(
   entry: UserVaultEntry,
   encryptionSalt: string,
 ): Promise<void> {
   const client = createSupabaseClient();
-  const { error } = await client
+
+  // RLS 診断: 認証状態をログ出力（匿名の場合は null）
+  try {
+    const { data: { user }, error: authErr } = await client.auth.getUser();
+    console.log('[Vault] Auth state:', user ? `user=${user.id}` : 'anonymous (anon key)', authErr ? `authErr=${authErr.message}` : '');
+  } catch {
+    console.log('[Vault] Auth check skipped');
+  }
+
+  console.log('[Vault] Upserting user_vault... salt prefix:', encryptionSalt.slice(0, 8) + '***');
+
+  const { data, error } = await client
     .from('user_vault')
     .upsert(
       {
@@ -140,8 +155,25 @@ export async function saveVaultToSupabase(
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'encryption_salt' },
-    );
-  if (error) throw error;
+    )
+    .select();
+
+  if (error) {
+    console.error('[Vault] Supabase upsert FAILED:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    // RLS ブロックの場合、hint に "insufficient privilege" 等が含まれる
+    throw new Error(`Vault保存エラー (${error.code}): ${error.message}${error.hint ? ` — ヒント: ${error.hint}` : ''}`);
+  }
+
+  console.log('[Vault] Vault saved OK. rows returned:', data?.length ?? 0);
+  if (!data || data.length === 0) {
+    // upsert は成功したが行が返らない場合 = RLS の SELECT ポリシー欠如の可能性
+    console.warn('[Vault] upsert returned 0 rows — verify RLS SELECT policy on user_vault');
+  }
 }
 
 /**
