@@ -21,7 +21,7 @@ import {
   generateBusinessCardsTableSQL,
   generateSQLEditorUrl,
 } from '@/lib/supabase-sql';
-import { getOrCreateEncryptionKey, generateEncryptionKey, exportKeyAsBase64, ENCRYPTION_LS_KEY } from '@/lib/crypto';
+import { getOrCreateEncryptionKey, generateEncryptionKey, exportKeyAsBase64, ENCRYPTION_LS_KEY, encryptData } from '@/lib/crypto';
 import { shareOrDownloadVCF } from '@/lib/vcf';
 import { invalidateSupabaseClient } from '@/lib/supabase-client';
 import { keyB64ToMnemonic } from '@/lib/mnemonic';
@@ -1774,6 +1774,25 @@ export function SettingsPage() {
 
       // Save to localStorage (with automatic sanitization)
       saveStorage(form);
+
+      // Azure 認証情報を Data Key で暗号化して保存（セッション UNLOCKED 時のみ）
+      const sessionManager = getSessionManager();
+      const endpoint = sanitizeUrl(form.azureEndpoint);
+      const apiKey   = sanitizeKey(form.azureKey);
+      if (sessionManager.isUnlocked() && endpoint && apiKey) {
+        const dataKey = sessionManager.getMasterKey();
+        if (dataKey) {
+          try {
+            const encrypted = await encryptData({ endpoint, apiKey }, dataKey);
+            localStorage.setItem('azure_credentials_encrypted', encrypted);
+          } catch {
+            // 暗号化失敗は無視（プレーンテキストが保存済み）
+          }
+        }
+      } else if (!endpoint || !apiKey) {
+        localStorage.removeItem('azure_credentials_encrypted');
+      }
+
       showToast('success', '設定を更新・確認しました');
       setHasChanges(false);
     } catch (err) {

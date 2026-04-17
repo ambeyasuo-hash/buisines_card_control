@@ -20,10 +20,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, RotateCcw, Check, Zap, FlipHorizontal2,
   User, Building2, Phone, Mail, MapPin, Briefcase,
-  AlertCircle, ScanLine, FileText, ChevronRight,
+  AlertCircle, ScanLine, FileText, ChevronRight, Lock,
 } from 'lucide-react';
 import { BackButton } from '@/components/BackButton';
-import { getOrCreateEncryptionKey, encryptData } from '@/lib/crypto';
+import { decryptData } from '@/lib/crypto';
+import { session, type SessionState } from '@/lib/auth-session';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,9 @@ export default function ScanPage() {
   const guideRef  = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Session state (UNLOCKED = Data Key available)
+  const [isSessionUnlocked, setIsSessionUnlocked] = useState(false);
+
   // Core state
   const [scanState,   setScanState]   = useState<ScanState>('initializing');
   const [scanPhase,   setScanPhase]   = useState<ScanPhase>('front');
@@ -95,8 +99,14 @@ export default function ScanPage() {
   const [capturePayload, setCapturePayload] = useState<CapturePayload | null>(null);
   const [frontResult,    setFrontResult]    = useState<OcrResult | null>(null);
   const [backNotes,      setBackNotes]      = useState<string | null>(null);
-  const [isSaving,       setIsSaving]       = useState(false);
-  const [saveError,      setSaveError]      = useState<string | null>(null);
+
+  // ── 0. Session monitoring ─────────────────────────────────────────
+  useEffect(() => {
+    setIsSessionUnlocked(session.isUnlocked());
+    return session.onStateChange((state: SessionState) => {
+      setIsSessionUnlocked(state === 'UNLOCKED');
+    });
+  }, []);
 
   // ── 1. Orientation monitoring ─────────────────────────────────────
   // 画面の向きを検知してガイド枠の向きを自動追従
@@ -328,8 +338,42 @@ export default function ScanPage() {
     if (!capturePayload) return;
     setScanState('analyzing');
 
-    const endpoint = localStorage.getItem(LS_AZURE.endpoint)?.trim() ?? '';
-    const apiKey   = localStorage.getItem(LS_AZURE.key)?.trim()      ?? '';
+    // セッション確認 — UNLOCKED でなければスキャン不可
+    if (!session.isUnlocked()) {
+      const errMsg = '生体認証が必要です。ホーム画面で認証してから再試行してください。';
+      if (scanPhase === 'front') setFrontResult({ error: errMsg });
+      else setBackNotes(`(エラー) ${errMsg}`);
+      setScanState('result');
+      return;
+    }
+
+    const dataKey = session.getMasterKey();
+    if (!dataKey) {
+      const errMsg = 'データキーを取得できませんでした。再度生体認証を行ってください。';
+      if (scanPhase === 'front') setFrontResult({ error: errMsg });
+      else setBackNotes(`(エラー) ${errMsg}`);
+      setScanState('result');
+      return;
+    }
+
+    // Azure 認証情報を復号（暗号化済みを優先、なければプレーンテキストにフォールバック）
+    let endpoint = '';
+    let apiKey   = '';
+    const encryptedCreds = localStorage.getItem('azure_credentials_encrypted');
+    if (encryptedCreds) {
+      try {
+        const creds = await decryptData<{ endpoint: string; apiKey: string }>(encryptedCreds, dataKey);
+        endpoint = creds.endpoint.trim();
+        apiKey   = creds.apiKey.trim();
+      } catch {
+        // 復号失敗 → プレーンテキストにフォールバック
+        endpoint = localStorage.getItem(LS_AZURE.endpoint)?.trim() ?? '';
+        apiKey   = localStorage.getItem(LS_AZURE.key)?.trim()      ?? '';
+      }
+    } else {
+      endpoint = localStorage.getItem(LS_AZURE.endpoint)?.trim() ?? '';
+      apiKey   = localStorage.getItem(LS_AZURE.key)?.trim()      ?? '';
+    }
 
     if (!endpoint || !apiKey) {
       const errMsg = 'Azure OCR の設定が未完了です。\n\n設定画面でエンドポイントと API Key を入力してください。';
@@ -349,6 +393,7 @@ export default function ScanPage() {
           mode:        scanPhase,
           endpoint,
           apiKey,
+          // 注: サーバー（Vercel）はこのキーをログせず Azure に転送するのみ
         }),
       });
 
@@ -372,84 +417,6 @@ export default function ScanPage() {
 
     setScanState('result');
   }, [capturePayload, scanPhase]);
-
-  // ── 4b. Save to Supabase (Zero-Knowledge) ────────────────────────────────
-  /**
-   * 撮影結果を端末内で暗号化してから Supabase に保存
-   *
-   * Zero-Knowledge フロー:
-   *   1. localStorage から AES-256-GCM キーを取得 (なければ新規生成)
-   *   2. 全 OCR フィールドをクライアント側で暗号化
-   *   3. encrypted_data のみをサーバーに送信 → PII はネットワークに流れない
-   *   4. Supabase URL/Key もリクエストボディで転送 (環境変数不使用)
-   */
-  const handleSave = useCallback(async () => {
-    if (!frontResult || isSaving) return;
-
-    setIsSaving(true);
-    setSaveError(null);
-
-    try {
-      // ① Supabase 認証情報を localStorage から取得
-      const supabaseUrl = localStorage.getItem('supabase_url')?.trim() ?? '';
-      const supabaseKey = localStorage.getItem('supabase_anon_key')?.trim() ?? '';
-
-      if (!supabaseUrl || !supabaseKey) {
-        setSaveError('Supabase が未設定です。\n\n設定画面で URL と Anon Key を入力してください。');
-        return;
-      }
-
-      // ② 端末内で暗号化 — PII はこの関数を出ない
-      const { key } = await getOrCreateEncryptionKey();
-      const encryptedData = await encryptData(
-        {
-          name:    frontResult.name    ?? null,
-          company: frontResult.company ?? null,
-          title:   frontResult.title   ?? null,
-          email:   frontResult.email   ?? null,
-          tel:     frontResult.tel     ?? null,
-          address: frontResult.address ?? null,
-          notes:   backNotes           ?? null,
-          raw:     frontResult.raw     ?? null,
-        },
-        key,
-      );
-
-      // ③ ブラインド検索ハッシュ (平文だが個人特定できない正規化文字列)
-      const searchHashes: string[] = [];
-      if (frontResult.company) searchHashes.push(frontResult.company.toLowerCase().trim());
-      if (frontResult.name)    searchHashes.push(frontResult.name.toLowerCase().trim());
-
-      // ④ サーバーへは暗号文 + Supabase 認証情報のみを送信
-      const res = await fetch('/api/save-business-card', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          encrypted_data:    encryptedData,
-          encryption_key_id: 'v1',
-          search_hashes:     searchHashes.length > 0 ? searchHashes : undefined,
-          scanned_at:        new Date().toISOString(),
-          thumbnail_url:     thumbnail ?? undefined,
-          supabaseUrl,
-          supabaseKey,
-        }),
-      });
-
-      const data = await res.json() as { ok: boolean; id?: string; error?: string };
-
-      if (data.ok && data.id) {
-        // Next.js サーバーサイドキャッシュをバイパスしてから一覧タブへ遷移
-        router.refresh();
-        router.push('/?tab=list');
-      } else {
-        setSaveError(data.error ?? '保存に失敗しました。もう一度お試しください。');
-      }
-    } catch (e) {
-      setSaveError(`通信エラー: ${String(e)}`);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [frontResult, backNotes, thumbnail, isSaving, router]);
 
   // ── 5. State transitions ──────────────────────────────────────────────────
 
@@ -669,7 +636,8 @@ export default function ScanPage() {
                 thumbnail={thumbnail}
                 scanPhase={scanPhase}
                 onSave={() => {
-                  // OCR 結果を localStorage に一時保存
+                  // OCR 結果を localStorage に一時保存し編集画面へ遷移
+                  // 暗号化は edit/page.tsx で Data Key を使って行う
                   const tempData = {
                     name:    frontResult?.name    ?? null,
                     company: frontResult?.company ?? null,
@@ -681,11 +649,8 @@ export default function ScanPage() {
                     notes:   backNotes ?? null,
                   };
                   localStorage.setItem('edit_capture_temp', JSON.stringify(tempData));
-                  // 編集画面へ遷移
                   router.push('/edit');
                 }}
-                isSaving={false}
-                saveError={null}
               />
             </motion.div>
           )}
@@ -731,10 +696,23 @@ export default function ScanPage() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
               >
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', textAlign: 'center', lineHeight: 1.5 }}>
-                  枠内に名刺を<br />合わせてください
-                </p>
-                <ShutterButton onClick={capture} phase={scanPhase} />
+                {isSessionUnlocked ? (
+                  <>
+                    <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', textAlign: 'center', lineHeight: 1.5 }}>
+                      枠内に名刺を<br />合わせてください
+                    </p>
+                    <ShutterButton onClick={capture} phase={scanPhase} />
+                  </>
+                ) : (
+                  <>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Lock style={{ width: 20, height: 20, color: '#f87171' }} />
+                    </div>
+                    <p style={{ fontSize: 9, color: '#f87171', textAlign: 'center', lineHeight: 1.5 }}>
+                      生体認証が<br />必要です
+                    </p>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -847,15 +825,13 @@ export default function ScanPage() {
 // ─── ResultContent ────────────────────────────────────────────────────────────
 
 function ResultContent({
-  frontResult, backNotes, thumbnail, scanPhase, onSave, isSaving, saveError,
+  frontResult, backNotes, thumbnail, scanPhase, onSave,
 }: {
   frontResult: OcrResult | null;
   backNotes:   string | null;
   thumbnail:   string | null;
   scanPhase:   ScanPhase;
   onSave:      () => void;
-  isSaving:    boolean;
-  saveError:   string | null;
 }) {
   // エラー表示
   const hasError = frontResult?.error || (scanPhase === 'back' && backNotes?.startsWith('(エラー)'));
@@ -942,22 +918,6 @@ function ResultContent({
             {frontResult.raw}
           </pre>
         </details>
-      )}
-
-      {/* 保存エラー表示 */}
-      {saveError && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: 12, padding: '12px 14px', display: 'flex', gap: 10 }}
-        >
-          <AlertCircle style={{ color: '#f87171', width: 16, height: 16, flexShrink: 0, marginTop: 2 }} />
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#fca5a5', marginBottom: 4 }}>保存エラー</p>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 1.6 }}>{saveError}</p>
-          </div>
-        </motion.div>
       )}
 
       {/* 確認画面へボタン (frontResult が成功している場合に表示) */}

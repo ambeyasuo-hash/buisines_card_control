@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { BackButton } from '@/components/BackButton';
 import { getLocation, reverseGeocode, type LocationCoords } from '@/lib/geolocation';
-import { getOrCreateEncryptionKey, encryptData } from '@/lib/crypto';
+import { encryptData } from '@/lib/crypto';
+import { session } from '@/lib/auth-session';
 import { useFontSize } from '@/lib/font-size-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -181,7 +182,13 @@ export default function EditCapturedCardPage() {
         return;
       }
 
-      const { key } = await getOrCreateEncryptionKey();
+      // Data Key を Session から取得（UNLOCKED 時のみ利用可能）
+      const dataKey = session.getMasterKey();
+      if (!dataKey) {
+        setSaveError('生体認証が必要です。ホーム画面で再認証してください。');
+        setSaving(false);
+        return;
+      }
 
       const dataToEncrypt = {
         name: editState.name || null,
@@ -197,7 +204,7 @@ export default function EditCapturedCardPage() {
         location_lng: location?.lng ?? null,
       };
 
-      const encryptedData = await encryptData(dataToEncrypt, key);
+      const encryptedData = await encryptData(dataToEncrypt, dataKey);
 
       const searchHashes: string[] = [];
       if (editState.company) searchHashes.push(editState.company.toLowerCase().trim());
